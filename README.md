@@ -17,7 +17,7 @@ The core of the project is a **Resource-Aware Engine** that prevents overbooking
 ### 1. Clone & Install
 
 # Clone the repository
-git clone [your-repo-link]
+git clone (https://github.com/Senior-Thesis/Ashland-Public-Transit.git)
 
 # Install Backend Dependencies
 cd server
@@ -76,88 +76,38 @@ Visual deployment bars
 🟥 Red = Full
 
 Priority Sorting
-
-
 Elderly / Disabled users (Priority #1, #2)
-
-
 First-Come-First-Served (FCFS) based on booking timestamp
-
-
 
 # 📝 Teammate Task Checklist
 If you are working on the code today, follow this priority order:
-
-
 Test Data
-
-
 Use January 27, 2026 as the test date
-
 Several "Dhruval" test cases already exist to demonstrate the Overbooked alert
-
 Asset Allocation
-
-
 Assign a vehicle per ride using the dropdown
-
-
 Options: Large Van or Small Car
-
-
-
-
 Conflict Resolution
-
-
 If the header shows OVERBOOKED
-
-
 Locate rides marked with the red Conflict badge
-
-
 Click the X (Reject) button on the lowest-priority ride
-
-
 Continue until fleet usage returns to 7/7
 
-
-
-
-
-📅 URCA Abstract Information
-
-
+# 📅 URCA Abstract Information
 Presentation Title:
 Modernizing Local Transit: A Resource-Locked Scheduling System for Ashland Public Transit
-
-
 Key Innovation:
 Transition from seat-counting to Physical Asset Management
-
-
 Advisor:
 Dr. Shanmugam
 
-
-
-📤 GitHub Workflow
+# 📤 GitHub Workflow
 When pushing changes, use clear and consistent commit prefixes:
-
-
 feat: — New features (e.g., Driver View)
-
-
 fix: — Bug fixes (e.g., timezone issues)
-
-
 docs: — Documentation updates
-
-
 Current Goal:
 Bridge the Communication Gap by implementing a read-only Driver View so drivers can clearly see their daily assignments.
-
-
 If you want, I can also:
 - Tighten this for a **research submission**
 - Add **architecture diagrams**
