@@ -1,33 +1,79 @@
 const mongoose = require('mongoose');
 
+/**
+ * Ride Schema - Resource Management Version
+ * This model tracks passenger requests and physical vehicle assignments
+ * for the Ashland Public Transit Fleet (7 Vehicles Total).
+ */
 const RideSchema = new mongoose.Schema({
-    // Simplified to String because we don't have a User Login system yet
-    passengerName: { type: String, required: true }, 
+    // 1. Core Passenger Data
+    passengerName: { 
+        type: String, 
+        required: [true, 'Passenger name is required for the manifest'] 
+    }, 
+    phoneNumber: { 
+        type: String, 
+        required: [true, 'Phone number is required for dispatch communication'] 
+    },
     
-    // Simplified from objects to strings for the MVP
+    // 2. Location Logic
     pickup: { type: String, required: true },
     dropoff: { type: String, required: true },
+    isOutOfTown: { type: Boolean, default: false },
+    mileage: { type: Number, default: 0 }, 
     
-    // Matches the "userType" from your Frontend state
+    // 3. Trip Logic
     userType: { 
         type: String, 
-        enum: ['General', 'Elderly/Disabled'], 
+        enum: ['General', 'Elderly/Disabled', 'Child'], 
         required: true 
     },
-    
     isSameDay: { type: Boolean, default: false },
-    passengers: { type: Number, default: 1 },
-    
-    // Changed from estimatedFare/actualFare to just 'fare' to match frontend
-    fare: { type: Number, required: true },
-    
-    status: { 
-        type: String, 
-        enum: ['Requested', 'Confirmed', 'En-Route', 'Completed', 'No-Show'], 
-        default: 'Requested' 
+    passengers: { 
+        type: Number, 
+        default: 1, 
+        min: [1, 'At least one passenger is required'],
+        max: [5, 'Groups larger than 5 require a special high-capacity request'] 
     },
     
-    scheduledTime: { type: Date, default: Date.now }
-}, { timestamps: true });
+    // 4. Financial Tracking
+    fare: { type: Number, required: true },
+    
+    // 5. Dispatcher Control Logic
+    // Starts at 'Pending Review' to solve the 'Automatic Acceptance' fear Liz mentioned.
+    status: { 
+        type: String, 
+        enum: [
+            'Pending Review', 
+            'Confirmed', 
+            'Rejected', 
+            'En-Route', 
+            'Completed', 
+            'No-Show'
+        ], 
+        default: 'Pending Review' 
+    },
+    
+    // 6. FLEET OPTIMIZATION FIELD
+    // This allows Liz to "Shuffle" passengers to the most efficient vehicle
+    assignedVehicle: {
+        type: String,
+        enum: ['Large Van (5)', 'Small Car (2)', 'Unassigned'],
+        default: 'Unassigned'
+    },
+    
+    dispatcherNotes: { type: String }, 
+    
+    // 7. Scheduling
+    scheduledTime: { 
+        type: Date, 
+        required: [true, 'A specific date and time is required for scheduling'] 
+    }
+}, { 
+    timestamps: true // Automatically tracks 'Created At' and 'Updated At'
+});
+
+// Expert Indexing: Helps the Dashboard load faster when Liz has hundreds of rides
+RideSchema.index({ scheduledTime: 1, status: 1 });
 
 module.exports = mongoose.model('Ride', RideSchema);
