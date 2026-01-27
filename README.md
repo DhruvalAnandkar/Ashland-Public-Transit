@@ -3,7 +3,7 @@
 **Team:** EagleLink Systems  
 **Members:** Dhruval Anandkar, Ian Kichurchak, Noah Crenshaw
 
----
+--- 
 
 ## 📌 Project Overview
 
@@ -99,14 +99,49 @@ Transition from seat-counting to Physical Asset Management
 Advisor:
 Dr. Shanmugam
 
-# 📤 GitHub Workflow
-When pushing changes, use clear and consistent commit prefixes:
-feat: — New features (e.g., Driver View)
-fix: — Bug fixes (e.g., timezone issues)
-docs: — Documentation updates
-Current Goal:
-Bridge the Communication Gap by implementing a read-only Driver View so drivers can clearly see their daily assignments.
-If you want, I can also:
-- Tighten this for a **research submission**
-- Add **architecture diagrams**
-- Split it into `README.md` + `CONTRIBUTING.md`
+# 📤 Project Workflow
+```
+Ashland-Public-Transit
+├──ai-core
+├──client
+│   ├──public
+│   │   ├──favicon.ico
+│   │   ├──index.html
+│   │   ├──logo192.png
+│   │   ├──logo512.png
+│   │   ├──manifest.json
+│   │   └──robots.txt
+│   ├──src
+│   │   ├──components
+│   │   │   ├──BookingForm.js
+│   │   │   └──DispatcherDashboard.js
+│   │   ├──services
+│   │   │   └──api.js
+│   │   ├──App.css
+│   │   ├──App.js
+│   │   ├──index.css
+│   │   └──index.js
+│   ├──package-lock.json
+│   ├──package.json
+│   ├──postcss.config.js
+│   ├──README.md
+│   ├──tailwind.config.js
+│   └──.gitignore
+├──server
+│   ├──config
+│   │   └──db.js
+│   ├──controllers
+│   ├──models
+│   │   └──Ride.js
+│   ├──routes
+│   │   └──rideRoutes.js
+│   ├──utils
+│   │   └──fareCalculator.js
+│   ├──index.js
+│   ├──package-lock.json
+│   ├──package.json
+│   └──.envexample
+├──README.md
+├──.gitattributes
+└──.gitignore
+```
