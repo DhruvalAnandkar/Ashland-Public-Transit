@@ -1,6 +1,6 @@
 # Ashland Transit: Smart Scheduling System
 
-**Team:** FleetLock Labs  
+**Team:** EagleLink Systems  
 **Members:** Ian Kichurchak, Dhruval Anandkar, Noah Crenshaw
 
 ---
