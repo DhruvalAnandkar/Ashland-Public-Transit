@@ -41,3 +41,38 @@ export const updateRideVehicle = async (id, assignedVehicle) => {
         throw error;
     }
 };
+
+
+// EXPERT: Fleet Management
+export const getVehicles = async () => {
+    const response = await axios.get(`${API_URL}/vehicles`);
+    return response.data;
+};
+
+export const updateVehicleStatus = async (id, status) => {
+    const response = await axios.patch(`${API_URL}/vehicles/${id}`, { status });
+    return response.data;
+};
+
+// STAFF: Edit Ride Details (Time/Fare)
+export const updateRideDetails = async (id, details) => {
+    try {
+        const response = await axios.patch(`${API_URL}/${id}/details`, details);
+        return response.data;
+    } catch (error) {
+        console.error("Error updating ride details:", error);
+        throw error;
+    }
+};
+
+// RIDER: Track specific ride
+export const getRideByTicket = async (ticketId) => {
+    try {
+        // ENCODE ID: Handles '#' characters correctly (e.g. #ASH-123 -> %23ASH-123)
+        const response = await axios.get(`${API_URL}/track/${encodeURIComponent(ticketId)}`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching ticket:", error);
+        throw error;
+    }
+};
