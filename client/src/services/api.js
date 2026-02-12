@@ -1,6 +1,29 @@
 import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api/rides';
+const AUTH_URL = 'http://localhost:5000/api/auth';
+
+// JWT INTERCEPTOR: Automatically attaches token to every request
+axios.interceptors.request.use((config) => {
+    const token = localStorage.getItem('token');
+    if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+}, (error) => {
+    return Promise.reject(error);
+});
+
+// AUTH: Login to get JWT
+export const login = async (username, password) => {
+    try {
+        const response = await axios.post(`${AUTH_URL}/login`, { username, password });
+        return response.data;
+    } catch (error) {
+        console.error("Login failed:", error);
+        throw error;
+    }
+};
 
 // RIDER: Create a new request
 export const createRide = async (rideData) => {
@@ -74,5 +97,36 @@ export const getRideByTicket = async (ticketId) => {
     } catch (error) {
         console.error("Error fetching ticket:", error);
         throw error;
+    }
+};
+// ADMIN: Global Settings (Auto-Accept)
+export const getAutoAccept = async () => {
+    try {
+        const response = await axios.get(`${API_URL}/settings/auto-accept`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching settings:", error);
+        return { autoAccept: false }; // Safe default
+    }
+};
+
+export const updateAutoAccept = async (autoAccept) => {
+    try {
+        const response = await axios.post(`${API_URL}/settings/auto-accept`, { autoAccept });
+        return response.data;
+    } catch (error) {
+        console.error("Error updating settings:", error);
+        throw error;
+    }
+};
+
+// ADMIN: Get Audit Logs
+export const getAuditLogs = async () => {
+    try {
+        const response = await axios.get(`${API_URL}/admin/audit-logs`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching audit logs:", error);
+        return [];
     }
 };

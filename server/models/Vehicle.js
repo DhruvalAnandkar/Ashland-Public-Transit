@@ -6,15 +6,15 @@ const mongoose = require('mongoose');
  * Allows Dispatch to mark vehicles as 'In Shop' to reduce capacity.
  */
 const VehicleSchema = new mongoose.Schema({
-    name: { 
-        type: String, 
+    name: {
+        type: String,
         required: true,
-        unique: true 
+        unique: true
     },
-    type: { 
-        type: String, 
-        enum: ['Large Van', 'Small Car'], 
-        required: true 
+    type: {
+        type: String,
+        enum: ['Large Van', 'Small Car'],
+        required: true
     },
     capacity: {
         type: Number,
@@ -24,7 +24,22 @@ const VehicleSchema = new mongoose.Schema({
         type: String,
         enum: ['Active', 'In Shop'],
         default: 'Active'
-    }
+    },
+    // --- MAINTENANCE TRACKING ---
+    engineHours: {
+        type: Number,
+        default: 0
+    },
+    lastServiceDate: {
+        type: Date
+    },
+    maintenanceHistory: [{
+        type: { type: String, required: true }, // e.g. 'Oil Change', 'Tire Rotation'
+        date: { type: Date, default: Date.now },
+        cost: { type: Number, default: 0 },
+        notes: String,
+        engineHoursAtService: Number
+    }]
 }, { timestamps: true });
 
 module.exports = mongoose.model('Vehicle', VehicleSchema);

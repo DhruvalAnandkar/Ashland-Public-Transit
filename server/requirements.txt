@@ -1,0 +1,10 @@
+Node.js dependencies for Server (Ashland Public Transit)
+Install with: npm install
+
+Dependency List:
+cors@^2.8.6
+dotenv@^17.2.3
+express@^5.2.1
+helmet@^8.1.0
+mongoose@^9.1.5
+morgan@^1.10.1

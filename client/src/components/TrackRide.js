@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getRideByTicket } from '../services/api';
 import { Search, MapPin, ArrowLeft, AlertTriangle, Phone, Copy, Check } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Link, useSearchParams } from 'react-router-dom';
 
@@ -136,6 +137,21 @@ const TrackRide = () => {
                                         <p className="text-2xl font-black text-slate-900">${ride.fare.toFixed(2)}</p>
                                     </div>
                                 </div>
+
+                                {/* QR CODE BOARDING PASS */}
+                                {(ride.status === 'Confirmed' || ride.status === 'En-Route') && (
+                                    <div className="mb-8 flex flex-col items-center bg-slate-50 p-6 rounded-2xl border-2 border-dashed border-slate-200">
+                                        <div className="bg-white p-2 rounded-xl shadow-sm mb-3">
+                                            <QRCodeSVG
+                                                value={JSON.stringify({ id: ride.ticketId, name: ride.passengerName, status: ride.status })}
+                                                size={128}
+                                                level={"H"}
+                                                fgColor={"#0f172a"}
+                                            />
+                                        </div>
+                                        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Scan to Board</p>
+                                    </div>
+                                )}
 
                                 <div className="space-y-6">
                                     <div className="flex gap-4 items-start">

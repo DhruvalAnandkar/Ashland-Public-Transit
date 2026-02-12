@@ -6,16 +6,20 @@ const LoginModal = ({ isOpen, onClose, onLogin, title = "Access Portal" }) => {
     const [password, setPassword] = useState('');
     const [error, setError] = useState(false);
 
-    const handleSubmit = (e) => {
+    const handleSubmit = async (e) => {
         e.preventDefault();
-        const success = onLogin(password);
-        if (success) {
-            setPassword('');
-            setError(false);
-            onClose();
-        } else {
+        try {
+            // "Access Code" implies strictly password, so we default username to 'admin'
+            // This preserves the simple UI while using the secure backend
+            const data = await onLogin('admin', password);
+            if (data) {
+                setPassword('');
+                setError(false);
+                onClose();
+            }
+        } catch (err) {
             setError(true);
-            setTimeout(() => setError(false), 2000); // Reset shake/error after 2s
+            setTimeout(() => setError(false), 2000);
         }
     };
 

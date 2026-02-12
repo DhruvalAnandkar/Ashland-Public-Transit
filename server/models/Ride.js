@@ -11,6 +11,11 @@ const RideSchema = new mongoose.Schema({
         type: String,
         required: [true, 'Passenger name is required for the manifest']
     },
+    riderId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: false // Optional for now to support legacy guests
+    },
     phoneNumber: {
         type: String,
         required: [true, 'Phone number is required for dispatch communication']
@@ -32,7 +37,7 @@ const RideSchema = new mongoose.Schema({
     // 3. Trip Logic
     userType: {
         type: String,
-        enum: ['General', 'Elderly/Disabled', 'Child'],
+        enum: ['Standard', 'Senior', 'Student', 'Veteran', 'Elderly/Disabled', 'Child'], // Expanded Enums
         required: true
     },
     isSameDay: { type: Boolean, default: false },
@@ -42,16 +47,46 @@ const RideSchema = new mongoose.Schema({
         min: [1, 'At least one passenger is required'],
         max: [5, 'Groups larger than 5 require a special high-capacity request']
     },
+    accessibility: {
+        type: Boolean,
+        default: false
+    },
+    estimatedPrice: {
+        type: Number
+    },
 
-    // 4. Financial Tracking
+    passengerDetails: {
+        adults: { type: Number, default: 1 },
+        children: { type: Number, default: 0 },
+        elderly: { type: Number, default: 0 }
+    },
+
+    // 4. Financial Tracking & Billing (Phase 3)
     fare: { type: Number, required: true },
+    fareType: {
+        type: String,
+        enum: ['SameDay', 'Scheduled', 'Elderly', 'Standard'],
+        default: 'SameDay'
+    },
+    finalizedFare: { type: Number }, // LOCKED Revenue
+    paymentStatus: {
+        type: String,
+        enum: ['Pending', 'Paid', 'Invoiced'],
+        default: 'Pending'
+    },
+    paymentMethod: {
+        type: String,
+        enum: ['Cash', 'Digital Pass', 'Account'],
+        default: 'Cash'
+    },
 
     // 5. Dispatcher Control Logic
-    // Starts at 'Pending Review' to solve the 'Automatic Acceptance' fear Liz mentioned.
     status: {
         type: String,
         enum: [
-            'Pending Review',
+            'Pending', // Default
+            'Pending Review', // Legacy support
+            'Approved', // New Request
             'Confirmed',
             'Rejected',
             'En-Route',
@@ -59,8 +94,16 @@ const RideSchema = new mongoose.Schema({
             'No-Show',
             'Cancelled'
         ],
-        default: 'Pending Review'
+        default: 'Pending'
     },
+
+    // 6. AUDIT TRAIL (Liz's Request)
+    logs: [{
+        user: String, // e.g. "Dispatcher", "Admin", "System"
+        action: String, // e.g. "Confirmed Ride"
+        timestamp: { type: Date, default: Date.now },
+        details: String
+    }],
 
     // 6. FLEET OPTIMIZATION FIELD
     // This allows Liz to "Shuffle" passengers to the most efficient vehicle

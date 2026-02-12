@@ -17,24 +17,31 @@ const ProtectedRoute = ({ isAdmin, children }) => {
 
 function App() {
   const [isAdmin, setIsAdmin] = useState(() => {
-    return localStorage.getItem("isDispatcher") === "true";
+    return !!localStorage.getItem("token"); // Check for Token existence
   });
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
-  // Updated to work with Modal (receives password directly)
-  const handleLogin = (password) => {
-    if (password === "Ashland2026") {
-      setIsAdmin(true);
-      localStorage.setItem("isDispatcher", "true");
-      return true;
-    } else {
-      return false; // Modal handles the error state
+  // Updated to use secure JWT Login
+  const handleLogin = async (username, password) => {
+    try {
+      const { login } = require('./services/api'); // Lazy load to avoid circular dep if any
+      const data = await login(username, password);
+
+      if (data.token) {
+        localStorage.setItem("token", data.token);
+        setIsAdmin(true);
+        return true;
+      }
+    } catch (error) {
+      return false;
     }
+    return false;
   };
 
   const handleLogout = () => {
     setIsAdmin(false);
-    localStorage.removeItem("isDispatcher");
+    localStorage.removeItem("token");
+    localStorage.removeItem("isDispatcher"); // Clean up legacy
   };
 
   return (

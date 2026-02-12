@@ -20,7 +20,7 @@ app.use(helmet());       // Security headers
 app.use(morgan('dev'));  // Logging for development
 
 // Define Routes
-// We will create the rideRoutes.js file next to handle booking logic
+app.use('/api/auth', require('./routes/authRoutes'));
 app.use('/api/rides', require('./routes/rideRoutes'));
 
 // Health Check
@@ -41,5 +41,5 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 5000;
 
 app.listen(PORT, () => {
-    console.log(`🚀 Expert Server started on port ${PORT}`);
+    console.log(` Expert Server started on port ${PORT}`);
 });

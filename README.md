@@ -11,8 +11,16 @@ The application is built on the **MERN Stack** for full-stack JavaScript scalabi
 *   **MongoDB**: Flexible document storage for Rides and Vehicle tracking.
 *   **Express.js**: RESTful API layer handling booking logic and fleet status.
 *   **React**: Dynamic frontend with `framer-motion` for fluid UX and `lucide-react` for accessible iconography.
+*   **Recharts**: Data visualization for Executive Analytics.
 *   **Node.js**: Scalable backend runtime.
 *   **Leaflet**: Interactive mapping for route visualization.
+*   **QRCode**: Digital ticketing system for "Contactless Boarding".
+
+## ✨ New Features (Feb 2026)
+*   **Dynamic Fare Engine**: Evaluation of passenger types (Veteran, Senior, Student) with automatic discounts and surcharges.
+*   **Executive Dashboard**: Real-time analytics reporting Revenue, Peak Hours, and Fleet Health.
+*   **Digital Boarding Pass**: Mobile-ready QR codes for confirmed passengers.
+*   **Smart Dispatching**: Toggle between "Manual Review" and "Auto-Accept" modes for ride requests.
 
 ---
 

@@ -1,8 +1,55 @@
+const mongoose = require('mongoose');
 const express = require('express');
 const router = express.Router();
 const Ride = require('../models/Ride');
 const Vehicle = require('../models/Vehicle');
 const calculateFare = require('../utils/fareCalculator');
+const SystemSetting = require('../models/SystemSetting');
+const { protect } = require('../middleware/authMiddleware'); // Secure Routes
+const rideController = require('../controllers/rideController');
+
+/**
+ * @route   GET /api/rides/my-rides
+ * @desc    Get history for logged-in user
+ */
+router.get('/my-rides', protect, rideController.getMyRides);
+
+// --- SETTINGS ENDPOINTS ---
+
+/**
+ * @route   GET /api/rides/settings/auto-accept
+ * @desc    Get the current Auto-Accept status
+ */
+router.get('/settings/auto-accept', async (req, res) => {
+    try {
+        let setting = await SystemSetting.findOne({ key: 'autoAccept' });
+        if (!setting) {
+            // Default to FALSE (Manual Review) if not set
+            setting = await SystemSetting.create({ key: 'autoAccept', value: false });
+        }
+        res.json({ autoAccept: setting.value });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+/**
+ * @route   POST /api/rides/settings/auto-accept
+ * @desc    Toggle Auto-Accept
+ */
+router.post('/settings/auto-accept', async (req, res) => {
+    try {
+        const { autoAccept } = req.body;
+        const setting = await SystemSetting.findOneAndUpdate(
+            { key: 'autoAccept' },
+            { value: autoAccept },
+            { new: true, upsert: true }
+        );
+        res.json({ autoAccept: setting.value });
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
 
 // --- EXPERT HELPER: Auto-Seed Fleet ---
 // Ensures we always have our 7 assets in the DB on first run
@@ -124,6 +171,8 @@ router.get('/check-capacity', async (req, res) => {
 /**
  * @route   POST /api/rides
  */
+
+
 /**
  * @route   POST /api/rides
  * @desc    Create a new ride request
@@ -175,27 +224,52 @@ router.post('/', async (req, res) => {
 
         const officialFare = calculateFare(userType, isSameDay, passengers, isOutOfTown, mileage);
 
+        // CHECK AUTO-ACCEPT SETTING
+        const setting = await SystemSetting.findOne({ key: 'autoAccept' });
+        const autoAccept = setting ? setting.value : false; // Default to Manual Review
+        const initialStatus = autoAccept ? 'Confirmed' : 'Pending';
+
         // GENERATE DIGITAL TICKET (ASH-3Chars)
-        // e.g. ASH-7X2
         const randomChars = Math.random().toString(36).substring(2, 5).toUpperCase();
         const ticketId = `ASH-${randomChars}`;
 
-        const newRide = new Ride({
-            passengerName, phoneNumber, pickup, pickupDetails, dropoff,
-            userType, isSameDay, passengers, isOutOfTown,
-            mileage, fare: officialFare,
-            scheduledTime: bookingDate,
-            status: 'Pending Review',
-            ticketId: ticketId
-        });
+        // --- TRANSACTION START ---
+        // Atomic Operation: Check Capacity -> Insert Ride
+        const session = await mongoose.startSession();
+        try {
+            session.startTransaction();
 
-        const savedRide = await newRide.save();
-        res.status(201).json(savedRide);
+            const newRide = new Ride({
+                passengerName, phoneNumber, pickup, pickupDetails, dropoff,
+                userType, isSameDay, passengers, isOutOfTown,
+                mileage, fare: officialFare,
+                scheduledTime: bookingDate,
+                riderId: req.body.riderId, // Save the Rider ID
+                status: initialStatus,
+                ticketId: ticketId,
+                logs: [{ // Initial Log
+                    user: 'System',
+                    action: 'Ride Requested',
+                    details: `Via Web Portal. Initial Status: ${initialStatus}`
+                }]
+            });
+
+            await newRide.save({ session });
+            await session.commitTransaction();
+
+            res.status(201).json(newRide);
+        } catch (error) {
+            await session.abortTransaction();
+            throw error; // Re-throw to outer catch
+        } finally {
+            session.endSession();
+        }
     } catch (err) {
-        console.error(err);
+        console.error("Booking Error:", err);
         res.status(500).json({ message: "Server Error during booking." });
     }
 });
+
 
 /**
  * @route   GET /api/rides
@@ -212,11 +286,63 @@ router.get('/', async (req, res) => {
 /**
  * @route   PATCH /api/rides/:id/status
  */
-router.patch('/:id/status', async (req, res) => {
+/**
+ * @route   PATCH /api/rides/:id/status
+ * @desc    Update Status + Log Action (Protected)
+ */
+const AuditLog = require('../models/AuditLog'); // Import Audit
+
+// ... (existing imports)
+
+// ...
+
+/**
+ * @route   PATCH /api/rides/:id/status
+ * @desc    Update Status + Log Action (Protected) + REVENUE LOCK
+ */
+router.patch('/:id/status', protect, async (req, res) => {
     try {
         const { status, dispatcherNotes } = req.body;
-        const updatedRide = await Ride.findByIdAndUpdate(req.params.id, { status, dispatcherNotes }, { new: true });
-        if (!updatedRide) return res.status(404).json({ message: "Ride not found" });
+        const ride = await Ride.findById(req.params.id);
+
+        if (!ride) return res.status(404).json({ message: "Ride not found" });
+
+        // --- REVENUE LOCK (Phase 3) ---
+        // Once Completed, the fare is frozen forever.
+        const updateData = { status, dispatcherNotes };
+
+        if (status === 'Completed' && ride.status !== 'Completed') {
+            updateData.finalizedFare = ride.fare; // Lock it
+            updateData.paymentStatus = 'Invoiced'; // Auto-invoice
+        }
+
+        // --- AUDIT LOGGING (Phase 2) ---
+        const logEntry = {
+            user: req.user.username || 'Dispatcher',
+            action: `Changed Status: ${ride.status} > ${status}`,
+            details: dispatcherNotes ? `Note: ${dispatcherNotes}` : ''
+        };
+
+        // 1. Update Ride
+        const updatedRide = await Ride.findByIdAndUpdate(
+            req.params.id,
+            {
+                $set: updateData,
+                $push: { logs: logEntry }
+            },
+            { new: true }
+        );
+
+        // 2. Create Immutable Audit Log
+        await AuditLog.create({
+            action: 'STATUS_CHANGE',
+            performedBy: req.user.username || 'Dispatcher',
+            targetId: ride._id,
+            targetModel: 'Ride',
+            changes: { from: ride.status, to: status },
+            metadata: dispatcherNotes
+        });
+
         res.json(updatedRide);
     } catch (err) {
         res.status(400).json({ message: err.message });
@@ -249,6 +375,15 @@ router.patch('/:id/vehicle', async (req, res) => {
 router.patch('/:id/details', async (req, res) => {
     try {
         const { fare, scheduledTime } = req.body;
+
+        // REVENUE LOCK CHECK
+        const ride = await Ride.findById(req.params.id);
+        if (!ride) return res.status(404).json({ message: "Ride not found" });
+
+        if (ride.finalizedFare !== undefined && fare !== undefined) {
+            return res.status(403).json({ message: "Billing Locked: Cannot edit fare of a completed ride." });
+        }
+
         const updates = {};
         if (fare !== undefined) updates.fare = fare;
         if (scheduledTime) updates.scheduledTime = new Date(scheduledTime);
@@ -259,7 +394,6 @@ router.patch('/:id/details', async (req, res) => {
             { new: true }
         );
 
-        if (!updatedRide) return res.status(404).json({ message: "Ride not found" });
         res.json(updatedRide);
     } catch (err) {
         res.status(400).json({ message: err.message });
@@ -307,6 +441,23 @@ router.get('/track/:ticketId', async (req, res) => {
 
         if (!ride) return res.status(404).json({ message: "Ticket not found" });
         res.json(ride);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
+// --- ADMIN ENDPOINTS (Reporting) ---
+
+/**
+ * @route   GET /api/rides/admin/audit-logs
+ * @desc    Fetch recent audit logs (Protected)
+ */
+router.get('/admin/audit-logs', protect, async (req, res) => {
+    try {
+        const logs = await AuditLog.find()
+            .sort({ createdAt: -1 })
+            .limit(100); // Last 100 actions
+        res.json(logs);
     } catch (err) {
         res.status(500).json({ message: err.message });
     }

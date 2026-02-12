@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { getRides, updateRideStatus, getVehicles, updateRideVehicle } from '../services/api';
+import { getRides, updateRideStatus, getVehicles, updateRideVehicle, login } from '../services/api'; // Import Login
 import { MapPin, CheckCircle, Clock, Truck, User, Hand, X, AlertTriangle } from 'lucide-react';
 import LoginModal from './LoginModal';
 import Toast from './Toast';
 import { AnimatePresence, motion } from 'framer-motion';
 
 const DriverView = () => {
-    const [isAuthenticated, setIsAuthenticated] = useState(false);
+    // CHECK FOR TOKEN ON MOUNT
+    const [isAuthenticated, setIsAuthenticated] = useState(() => !!localStorage.getItem('token'));
     const [vehicles, setVehicles] = useState([]);
     const [selectedVehicle, setSelectedVehicle] = useState('');
     const [myRides, setMyRides] = useState([]);
@@ -27,13 +28,20 @@ const DriverView = () => {
 
     const removeToast = (id) => setToasts(prev => prev.filter(t => t.id !== id));
 
-    const handleLogin = (code) => {
-        if (code === "ASH2026") {
-            setIsAuthenticated(true);
-            return true;
-        } else {
+    // SECURE LOGIN HANDLER
+    const handleLogin = async (username, password) => {
+        try {
+            const data = await login(username, password);
+            if (data.token) {
+                localStorage.setItem('token', data.token);
+                setIsAuthenticated(true);
+                return true;
+            }
+        } catch (error) {
+            console.error("Driver Login Error", error);
             return false;
         }
+        return false;
     };
 
     const loadFleet = async () => {

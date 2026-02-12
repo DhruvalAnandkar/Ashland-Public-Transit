@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Phone, Calendar, Clock, AlertTriangle, CheckCircle2, MapPin, Users, XCircle, User, UserCheck } from 'lucide-react';
 import { createRide, checkCapacity } from '../services/api';
+import { calculateFare } from '../utils/fareCalculator'; // Shared Logic
 import { motion, AnimatePresence } from 'framer-motion';
 import Toast from './Toast';
 
@@ -12,12 +13,12 @@ const BookingForm = () => {
         phoneNumber: '',
         pickup: '',
         dropoff: '',
-        userType: 'General',
+        userType: 'Standard', // Default to Standard
         isSameDay: false,
         passengers: 1,
         scheduledTime: ''
     });
-    const [price, setPrice] = useState(3.00);
+    const [price, setPrice] = useState(2.00); // Default Standard Price
     const [capacityStatus, setCapacityStatus] = useState(null);
     const [isPast, setIsPast] = useState(false);
     const [isFull, setIsFull] = useState(false);
@@ -73,17 +74,20 @@ const BookingForm = () => {
         return () => clearTimeout(timer);
     }, [formData.scheduledTime, formData.passengers]);
 
-    // FARE ENGINE
-    useEffect(() => {
-        let basePrice = formData.userType === 'Elderly/Disabled'
-            ? (formData.isSameDay ? 2.50 : 1.50)
-            : (formData.isSameDay ? 5.00 : 3.00);
 
-        if (formData.passengers > 1) {
-            setPrice(basePrice + (basePrice / 2) * (formData.passengers - 1));
-        } else {
-            setPrice(basePrice);
-        }
+
+    // ... (existing code)
+
+    // FARE ENGINE: Uses Shared Utility for 1:1 Backend Match
+    useEffect(() => {
+        const calculatedPrice = calculateFare(
+            formData.userType,
+            formData.isSameDay,
+            formData.passengers,
+            false, // isOutOfTown (Not yet in form, default to false)
+            0      // miles
+        );
+        setPrice(calculatedPrice);
     }, [formData.userType, formData.isSameDay, formData.passengers]);
 
     const handleSubmit = async (e) => {
@@ -100,7 +104,7 @@ const BookingForm = () => {
 
             setFormData({
                 passengerName: '', phoneNumber: '', pickup: '', dropoff: '',
-                userType: 'General', isSameDay: false, passengers: 1, scheduledTime: ''
+                userType: 'Standard', isSameDay: false, passengers: 1, scheduledTime: ''
             });
             setCapacityStatus(null);
             setIsFull(false);
@@ -217,14 +221,17 @@ const BookingForm = () => {
                         </div>
                     )}
 
-                    {/* USER TYPE SELECTOR */}
-                    <div className="flex gap-2 p-1 bg-slate-100 rounded-2xl">
-                        {['General', 'Elderly/Disabled'].map((type) => (
-                            <button key={type} type="button" onClick={() => setFormData({ ...formData, userType: type })}
-                                className={`flex-1 py-2 text-[10px] font-black rounded-xl transition-all ${formData.userType === type ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
-                                {type}
-                            </button>
-                        ))}
+                    {/* USER TYPE SELECTOR (Expanded for Clarity) */}
+                    <div>
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2 block">Passenger Type</label>
+                        <div className="grid grid-cols-2 gap-2">
+                            {['Standard', 'Senior', 'Student', 'Veteran', 'Elderly/Disabled', 'Child'].map((type) => (
+                                <button key={type} type="button" onClick={() => setFormData({ ...formData, userType: type })}
+                                    className={`py-2 px-1 text-[10px] font-black rounded-xl transition-all border ${formData.userType === type ? 'bg-blue-600 text-white border-blue-600 shadow-md transform scale-105' : 'bg-white text-slate-500 border-slate-200 hover:border-blue-300'}`}>
+                                    {type}
+                                </button>
+                            ))}
+                        </div>
                     </div>
 
                     {/* PASSENGER ADJUSTER */}

@@ -7,31 +7,42 @@
  * @param {number} miles - Miles traveled outside city limits
  */
 const calculateFare = (userType, isSameDay, passengers, isOutOfTown = false, miles = 0) => {
-    let baseFare = 0;
-    
+
+
     // 1. Determine Base Fare
+    // Rates: Standard ($2.00), Senior/Disabled ($1.00), Student ($1.50), Veteran (Free)
+    const RATES = {
+        'Standard': 2.00,
+        'General': 2.00, // Fallback
+        'Senior': 1.00,
+        'Elderly/Disabled': 1.00,
+        'Student': 1.50,
+        'Child': 1.00,
+        'Veteran': 0.00
+    };
+
+    let baseFare = RATES[userType] !== undefined ? RATES[userType] : 2.00;
+
+    // Surcharge for "Same Day" bookings (skip for Veterans/Seniors if desired, but keeping logic simple for now)
+    // Business Rule: Same Day adds $1.00 surcharge for Standard/Student
     if (isSameDay) {
-        baseFare = (userType === 'Elderly/Disabled') ? 2.50 : 5.00;
-    } else {
-        baseFare = (userType === 'Elderly/Disabled') ? 1.50 : 3.00;
+        if (userType === 'Standard' || userType === 'General' || userType === 'Student') {
+            baseFare += 1.00; // Same Day Surcharge
+        }
     }
 
-    // 2. Multi-passenger logic (Second person pays half-price)
+    // 2. Multi-passenger logic (Second person pays half-price if not free)
     let total = baseFare;
-    if (passengers > 1) {
+    if (passengers > 1 && baseFare > 0) {
         const discountedRiders = passengers - 1;
         total += (baseFare / 2) * discountedRiders;
     }
 
-    // 3. Out of Town logic ($2.50 per mile outside city)
+    // 3. Out of Town logic ($2.50 per mile outside city) - Stays the same
     if (isOutOfTown && miles > 0) {
         total += (miles * 2.50);
     }
 
-    // 4. Special Child Logic (Simplified: Under 12 with adult is FREE)
-    // In a full system, we'd check age, but for MVP we assume the calculated total 
-    // covers the fare-paying adults.
-    
     return total;
 };
 
