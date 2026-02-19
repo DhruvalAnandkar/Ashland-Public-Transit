@@ -34,6 +34,7 @@ const DriverView = () => {
             const data = await login(username, password);
             if (data.token) {
                 localStorage.setItem('token', data.token);
+                localStorage.setItem('driverUsername', data.username); // Store for auto-assign
                 setIsAuthenticated(true);
                 return true;
             }
@@ -48,6 +49,16 @@ const DriverView = () => {
         try {
             const data = await getVehicles();
             setVehicles(data);
+
+            // AUTO-SELECT ASSIGNED VEHICLE
+            const myUsername = localStorage.getItem('driverUsername');
+            if (myUsername) {
+                const assignedVehicle = data.find(v => v.assignedDriver === myUsername);
+                if (assignedVehicle) {
+                    setSelectedVehicle(assignedVehicle.name);
+                    addToast(`Welcome back! Auto-selected ${assignedVehicle.name}`, 'success');
+                }
+            }
         } catch (error) {
             console.error("Fleet Load Error", error);
         }

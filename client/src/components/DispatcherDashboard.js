@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { getRides, updateRideStatus, updateRideVehicle, getVehicles, updateRideDetails, createRide, getAutoAccept, updateAutoAccept, getAuditLogs } from '../services/api';
+import { getRides, updateRideStatus, updateRideVehicle, getVehicles, updateRideDetails, createRide, getAutoAccept, updateAutoAccept, getAuditLogs, updateVehicleDriver, getDrivers } from '../services/api';
 import { Clock, MapPin, CheckCircle, XCircle, Phone, Search, Truck, ShieldAlert, ChevronLeft, ChevronRight, UserCheck, Ticket, CircleDollarSign, Ban, Pencil, Plus, BarChart3, Settings, PieChart, Activity, FileText, ShieldCheck, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart as RePie, Pie, Cell } from 'recharts';
 import dayjs from 'dayjs';
@@ -37,18 +37,22 @@ const DispatcherDashboard = () => {
     // EXPERT DATE MATCHER: Prevents the "Empty Graph" by ignoring UTC offsets
     const [viewDate, setViewDate] = useState(dayjs().format('YYYY-MM-DD'));
 
+    const [driversList, setDriversList] = useState([]); // List of users with role 'Driver'
+
     const fetchData = async () => {
         try {
-            const [ridesData, vehiclesData, autoAcceptData, auditLogsData] = await Promise.all([
+            const [ridesData, vehiclesData, autoAcceptData, auditLogsData, driversData] = await Promise.all([
                 getRides(),
                 getVehicles(),
                 getAutoAccept(),
-                getAuditLogs()
+                getAuditLogs(),
+                getDrivers()
             ]);
             setRides(ridesData);
             setVehicles(vehiclesData);
             setAutoAccept(autoAcceptData.autoAccept);
             setAuditLogs(auditLogsData || []);
+            setDriversList(driversData || []);
             setLoading(false);
         } catch (error) {
             console.error(error);
@@ -452,8 +456,9 @@ const DispatcherDashboard = () => {
 
                                         <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto justify-between border-t lg:border-t-0 lg:border-l pt-4 lg:pt-0 lg:pl-6 border-slate-100">
                                             <div className="flex flex-col gap-1 min-w-[140px]">
-                                                {/* <label className="text-[8px] font-bold text-slate-300 uppercase tracking-widest">Assign Asset</label> */}
+                                                {/* Assigned Driver Display */}
                                                 <div className="relative">
+                                                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Assigned Vehicle</p>
                                                     <select value={ride.assignedVehicle || 'Unassigned'} onChange={(e) => handleVehicleAssign(ride._id, e.target.value)} className="w-full text-[10px] font-bold border border-slate-200 rounded-xl p-2.5 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all appearance-none cursor-pointer">
                                                         <option value="Unassigned">-- Select Asset --</option>
                                                         {vehicles.length > 0 ? vehicles.map(v => (
@@ -465,6 +470,20 @@ const DispatcherDashboard = () => {
                                                             </>
                                                         )}
                                                     </select>
+
+                                                    {/* SHOW DRIVER IF ASSIGNED */}
+                                                    {(() => {
+                                                        const v = vehicles.find(veh => veh.name === ride.assignedVehicle);
+                                                        if (v && v.assignedDriver) {
+                                                            return (
+                                                                <div className="absolute -bottom-6 left-0 flex items-center gap-1.5 text-[10px] font-black text-white bg-blue-600 px-3 py-1 rounded-full shadow-md z-10 animate-in fade-in slide-in-from-bottom-2">
+                                                                    <UserCheck size={12} /> {v.assignedDriver}
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return null;
+                                                    })()}
+
                                                     <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
                                                         <Truck size={12} />
                                                     </div>
@@ -746,9 +765,77 @@ const DispatcherDashboard = () => {
                 </div>
             )}
 
-            {/* FOOTER QUICK LINKS */}
+            {/* FLEET ASSIGNMENT MODAL */}
+            {activeTab === 'assignments' && (
+                <div className="fixed inset-0 bg-black/50 z-[100] flex items-center justify-center backdrop-blur-sm p-4">
+                    <div className="bg-white rounded-3xl p-8 w-full max-w-2xl shadow-2xl animate-in fade-in zoom-in duration-200 h-[80vh] flex flex-col">
+                        <div className="flex justify-between items-center mb-6 border-b border-slate-100 pb-4">
+                            <div>
+                                <h3 className="text-2xl font-black text-slate-800 uppercase tracking-tighter flex items-center gap-2">
+                                    <Truck size={24} className="text-blue-600" /> Fleet Assignments
+                                </h3>
+                                <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Manage Driver Schedules</p>
+                            </div>
+                            <button onClick={() => setActiveTab('manifest')} className="p-2 hover:bg-slate-100 rounded-full transition-colors text-slate-400 hover:text-slate-600">
+                                <XCircle size={24} />
+                            </button>
+                        </div>
+
+                        <div className="overflow-y-auto flex-1 space-y-4 pr-2">
+                            {vehicles.map(vehicle => (
+                                <div key={vehicle._id} className="bg-slate-50 p-4 rounded-2xl flex items-center justify-between border border-slate-200">
+                                    <div className="flex items-center gap-4">
+                                        <div className={`p-3 rounded-xl ${vehicle.status === 'Active' ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
+                                            <Truck size={24} />
+                                        </div>
+                                        <div>
+                                            <h4 className="font-black text-slate-700">{vehicle.name}</h4>
+                                            <p className="text-xs font-bold text-slate-400 uppercase">{vehicle.type} • {vehicle.capacity} Seats</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-4">
+                                        <div className="text-right">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Assigned Driver</p>
+                                            <div className="relative">
+                                                <select
+                                                    value={vehicle.assignedDriver || ''}
+                                                    onChange={async (e) => {
+                                                        const newDriver = e.target.value;
+                                                        try {
+                                                            await updateVehicleDriver(vehicle._id, newDriver);
+                                                            fetchData(); // Refresh list
+                                                            addToast(`Assigned ${newDriver || 'No One'} to ${vehicle.name}`, 'success');
+                                                        } catch (err) {
+                                                            addToast("Assignment Failed", 'error');
+                                                        }
+                                                    }}
+                                                    className="appearance-none bg-white border border-slate-200 text-slate-700 font-bold text-sm py-2 pl-4 pr-10 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:border-blue-300 transition-colors"
+                                                >
+                                                    <option value="">-- Unassigned --</option>
+                                                    {driversList.map(d => (
+                                                        <option key={d._id} value={d.username}>{d.username}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                                    <UserCheck size={14} />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Status Toggle (Bonus: Quick Maintenance Toggle) */}
+                                        {/* <button className="p-2 text-slate-300 hover:text-amber-500 transition-colors" title="Maintenance Mode"><Settings size={18} /></button> */}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* FOOTER QUICK LINKS - MODIFIED */}
             <div className="mt-12 pt-6 border-t border-slate-200 flex justify-center gap-8 text-[10px] font-black uppercase tracking-widest text-slate-400">
-                <a href="/driver" target="_blank" className="hover:text-blue-500 transition-colors flex items-center gap-2"><Truck size={14} /> Open Driver View</a>
+                <button onClick={() => setActiveTab('assignments')} className="hover:text-blue-500 transition-colors flex items-center gap-2"><UserCheck size={14} /> Manage Drivers</button>
                 <a href="/fleet" target="_blank" className="hover:text-blue-500 transition-colors flex items-center gap-2"><Truck size={14} /> Fleet Manager</a>
             </div>
 

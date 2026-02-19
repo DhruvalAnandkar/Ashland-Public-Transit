@@ -25,6 +25,11 @@ const VehicleSchema = new mongoose.Schema({
         enum: ['Active', 'In Shop'],
         default: 'Active'
     },
+    // --- ASSIGNMENT TRACKING ---
+    assignedDriver: {
+        type: String,
+        default: null // Username of the driver
+    },
     // --- MAINTENANCE TRACKING ---
     engineHours: {
         type: Number,

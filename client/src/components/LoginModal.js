@@ -2,16 +2,23 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Lock, LogIn } from 'lucide-react';
 
-const LoginModal = ({ isOpen, onClose, onLogin, title = "Access Portal" }) => {
+const LoginModal = ({ isOpen, onClose, onLogin, title = "Access Portal", initialRole = "Dispatcher" }) => {
+    const [username, setUsername] = useState(initialRole === 'Dispatcher' ? 'admin' : '');
     const [password, setPassword] = useState('');
     const [error, setError] = useState(false);
+
+    // Update defaults if role changes when modal re-opens
+    React.useEffect(() => {
+        if (isOpen) {
+            setUsername(initialRole === 'Dispatcher' ? 'admin' : '');
+            setPassword('');
+        }
+    }, [isOpen, initialRole]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
         try {
-            // "Access Code" implies strictly password, so we default username to 'admin'
-            // This preserves the simple UI while using the secure backend
-            const data = await onLogin('admin', password);
+            const data = await onLogin(username, password);
             if (data) {
                 setPassword('');
                 setError(false);
@@ -50,15 +57,26 @@ const LoginModal = ({ isOpen, onClose, onLogin, title = "Access Portal" }) => {
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="space-y-6">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Access Code</label>
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Username</label>
+                            <input
+                                type="text"
+                                value={username}
+                                onChange={(e) => setUsername(e.target.value)}
+                                className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-slate-700 outline-none focus:border-blue-500 transition-all"
+                                placeholder="e.g. driver1"
+                            />
+                        </div>
+
+                        <div className="space-y-1">
+                            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Password</label>
                             <input
                                 type="password"
                                 autoFocus
                                 value={password}
                                 onChange={(e) => setPassword(e.target.value)}
-                                className={`w-full p-4 bg-slate-50 border-2 rounded-2xl font-black text-lg text-center tracking-widest outline-none transition-all ${error ? 'border-red-400 bg-red-50 text-red-600 animate-pulse' : 'border-slate-100 focus:border-blue-500 text-slate-800'}`}
+                                className={`w-full p-3 bg-slate-50 border-2 rounded-xl font-bold text-lg text-center tracking-widest outline-none transition-all ${error ? 'border-red-400 bg-red-50 text-red-600 animate-pulse' : 'border-slate-100 focus:border-blue-500 text-slate-800'}`}
                                 placeholder="••••••••"
                             />
                             {error && <p className="text-xs font-bold text-red-500 text-center animate-bounce">Access Denied</p>}

@@ -118,7 +118,15 @@ const BookingForm = () => {
 
     // Helper to handle date change and update formData
     const handleDateChange = (e) => {
-        setFormData({ ...formData, scheduledTime: e.target.value });
+        const newTime = e.target.value;
+        const date = new Date(newTime);
+        const today = new Date();
+        // Check if Same Day (ignoring time)
+        const isSameDay = date.getFullYear() === today.getFullYear() &&
+            date.getMonth() === today.getMonth() &&
+            date.getDate() === today.getDate();
+
+        setFormData({ ...formData, scheduledTime: newTime, isSameDay });
     };
 
     return (

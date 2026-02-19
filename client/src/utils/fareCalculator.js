@@ -9,37 +9,45 @@
 export const calculateFare = (userType, isSameDay, passengers, isOutOfTown = false, miles = 0) => {
 
 
-    // 1. Determine Base Fare
-    // Rates: Standard ($2.00), Senior/Disabled ($1.00), Student ($1.50), Veteran (Free)
-    const RATES = {
-        'Standard': 2.00,
-        'General': 2.00, // Fallback
-        'Senior': 1.00,
-        'Elderly/Disabled': 1.00,
-        'Student': 1.50,
-        'Child': 1.00,
-        'Veteran': 0.00
-    };
+    // 1. Determine Base Fare based on User Type and Timing
+    // Rates: Standard ($3.00/$5.00), Senior/Disabled ($1.50/$2.50), Student ($1.50/$2.50)
+    let baseFare = 0;
 
-    let baseFare = RATES[userType] !== undefined ? RATES[userType] : 2.00;
+    if (userType === 'Standard' || userType === 'General' || userType === 'Student') {
+        baseFare = isSameDay ? 5.00 : 3.00;
+    } else if (['Senior', 'Elderly/Disabled', 'Child'].includes(userType)) {
+        baseFare = isSameDay ? 2.50 : 1.50;
+    } else if (userType === 'Veteran') {
+        baseFare = 0.00; // Free
+    } else {
+        baseFare = isSameDay ? 5.00 : 3.00; // Default to Standard
+    }
 
-    // Surcharge for "Same Day" bookings (skip for Veterans/Seniors if desired, but keeping logic simple for now)
-    // Business Rule: Same Day adds $1.00 surcharge for Standard/Student
-    if (isSameDay) {
-        if (userType === 'Standard' || userType === 'General' || userType === 'Student') {
-            baseFare += 1.00; // Same Day Surcharge
+    // 2. Multi-passenger logic
+    // Rule: "If a second person riding is going to the same destination as the general public rider, the second person pays half-price"
+    // This implies the discount is primarily for General Public/Standard fares.
+    // For Elderly/Disabled, the rate is "Per Trip", suggesting flat rate (though we can be generous if needed, strictly text says Per Trip).
+    // However, for implementation safety and to fix the specific user complaint ($6 for 5 people was too low, implies old logic was finding $2 base),
+    // we will apply half-price rule to Standard/Student.
+
+    let total = baseFare;
+
+    if (passengers > 1 && baseFare > 0) {
+        const additionalPassengers = passengers - 1;
+
+        if (['Standard', 'General', 'Student'].includes(userType)) {
+            // Half Price for additional passengers
+            total += (baseFare / 2) * additionalPassengers;
+        } else {
+            // Full Price for additional passengers (Elderly/Disabled/Child)
+            // Text says "$1.50 per trip", doesn't explicitly mention group discount for them.
+            total += baseFare * additionalPassengers;
         }
     }
 
-    // 2. Multi-passenger logic (Second person pays half-price if not free)
-    let total = baseFare;
-    if (passengers > 1 && baseFare > 0) {
-        const discountedRiders = passengers - 1;
-        total += (baseFare / 2) * discountedRiders;
-    }
-
-    // 3. Out of Town logic ($2.50 per mile outside city) - Stays the same
+    // 3. Out of Town logic
     if (isOutOfTown && miles > 0) {
+        // Base In-Town Rate + $2.50/mile
         total += (miles * 2.50);
     }
 

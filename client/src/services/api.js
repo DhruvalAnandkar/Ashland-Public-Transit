@@ -77,6 +77,28 @@ export const updateVehicleStatus = async (id, status) => {
     return response.data;
 };
 
+// NEW: Assign Driver to Vehicle
+export const updateVehicleDriver = async (id, assignedDriver) => {
+    try {
+        const response = await axios.patch(`${API_URL}/vehicles/${id}`, { assignedDriver });
+        return response.data;
+    } catch (error) {
+        console.error("Error updating driver assignment:", error);
+        throw error;
+    }
+};
+
+// STAFF: Get All Drivers for Assignment
+export const getDrivers = async () => {
+    try {
+        const response = await axios.get(`${AUTH_URL}/drivers`);
+        return response.data;
+    } catch (error) {
+        console.error("Error fetching drivers:", error);
+        return [];
+    }
+};
+
 // STAFF: Edit Ride Details (Time/Fare)
 export const updateRideDetails = async (id, details) => {
     try {

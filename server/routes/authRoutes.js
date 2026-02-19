@@ -12,6 +12,18 @@ const generateToken = (id) => {
     });
 };
 
+// @route   GET /api/auth/drivers
+// @desc    Get all users with role 'Driver' (case insensitive)
+// @access  Protected
+router.get('/drivers', protect, async (req, res) => {
+    try {
+        const drivers = await User.find({ role: { $regex: /^driver$/i } }).select('username _id');
+        res.json(drivers);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
+});
+
 // @route   POST /api/auth/login
 // @desc    Authenticate user & get token
 // @access  Public

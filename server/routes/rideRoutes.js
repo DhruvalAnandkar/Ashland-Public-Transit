@@ -420,10 +420,16 @@ router.get('/vehicles', async (req, res) => {
  */
 router.patch('/vehicles/:id', async (req, res) => {
     try {
-        const { status } = req.body;
+        const { status, assignedDriver } = req.body;
+
+        // Build dynamic update object
+        const updates = {};
+        if (status) updates.status = status;
+        if (assignedDriver !== undefined) updates.assignedDriver = assignedDriver; // Allow setting to null
+
         const updatedVehicle = await Vehicle.findByIdAndUpdate(
             req.params.id,
-            { status },
+            updates,
             { new: true }
         );
         res.json(updatedVehicle);
