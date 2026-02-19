@@ -3,8 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 
 // CRITICAL: URL Configuration
 // For Android Emulator, use 'http://10.0.2.2:5000/api'
-// For Physical Device, use your computer's LAN IP (e.g., 'http://192.168.1.XX:5000/api')
-const API_URL = 'http://10.0.2.2:5000/api';
+// For Physical Device, use your computer's LAN IP (e.g., 'http://172.23.21.67:5000/api')
+const API_URL = 'http://172.23.21.67:5000/api';
 
 const api = axios.create({
     baseURL: API_URL,
