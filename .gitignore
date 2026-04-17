@@ -3,3 +3,5 @@ node_modules
 .DS_Store
 dist
 firebase-service-account.json
+# Windows reserved device name — appears as ghost untracked file in git status
+nul
