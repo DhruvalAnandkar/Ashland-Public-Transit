@@ -1,10 +1,13 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
+import Constants from 'expo-constants';
 
 // CRITICAL: URL Configuration
-// For Android Emulator, use 'http://10.0.2.2:5000/api'
-// For Physical Device, use your computer's LAN IP (e.g., 'http://172.23.21.67:5000/api')
-const API_URL = 'http://172.23.21.67:5000/api';
+// Dynamically resolve the IP address using Expo's hostUri when in dev mode.
+// This prevents "Network Error" when switching Wi-Fi networks or using different devices.
+const debuggerHost = Constants.expoConfig?.hostUri;
+const localhost = debuggerHost ? debuggerHost.split(':')[0] : '172.23.19.248';
+const API_URL = `http://${localhost}:5000/api`;
 
 const api = axios.create({
     baseURL: API_URL,

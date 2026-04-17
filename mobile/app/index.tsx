@@ -3,13 +3,15 @@ import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { logout, checkSession } from '../services/api';
 import AuthScreen from '../screens/AuthScreen';
 import RiderHomeScreen from '../screens/RiderHomeScreen';
-import BookingScreen from '../screens/BookingScreen';
-import TicketScreen from '../screens/TicketScreen';
+import RiderBookingScreen from '../screens/RiderBookingScreen';
+import RiderTrackingScreen from '../screens/RiderTrackingScreen';
+import RiderRidesScreen from '../screens/RiderRidesScreen';
 
 export default function Index() {
     const [user, setUser] = useState(null);
     const [currentScreen, setCurrentScreen] = useState('HOME');
     const [currentRide, setCurrentRide] = useState(null);
+    const [currentParams, setCurrentParams] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
 
     // Session Restoration
@@ -36,6 +38,7 @@ export default function Index() {
         setUser(null);
         setCurrentScreen('HOME');
         setCurrentRide(null);
+        setCurrentParams(null);
     };
 
     // Register global 401 handler
@@ -43,6 +46,32 @@ export default function Index() {
         const { setUnauthorizedCallback } = require('../services/api');
         setUnauthorizedCallback(handleLogout);
     }, []);
+
+    // Mock Navigation Object
+    const navigation = {
+        navigate: (screenName: string, params?: any) => {
+            setCurrentParams(params || null);
+            if (screenName === 'RiderBookingScreen') setCurrentScreen('BOOKING');
+            else if (screenName === 'RiderRidesScreen') setCurrentScreen('RIDES');
+            else if (screenName === 'RiderTrackingScreen') {
+                if (params?.ride) setCurrentRide(params.ride);
+                setCurrentScreen('TICKET');
+            }
+        },
+        replace: (screenName: string, params?: any) => {
+            setCurrentParams(params || null);
+            if (screenName === 'RiderBookingScreen') setCurrentScreen('BOOKING');
+            else if (screenName === 'RiderRidesScreen') setCurrentScreen('RIDES');
+            else if (screenName === 'RiderTrackingScreen') {
+                if (params?.ride) setCurrentRide(params.ride);
+                setCurrentScreen('TICKET');
+            }
+        },
+        goBack: () => setCurrentScreen('HOME'),
+        popToTop: () => setCurrentScreen('HOME')
+    };
+
+    const route = { params: currentParams };
 
     const renderScreen = () => {
         if (isLoading) {
@@ -62,7 +91,7 @@ export default function Index() {
                     <RiderHomeScreen
                         user={user}
                         onLogout={handleLogout}
-                        onBookPress={() => setCurrentScreen('BOOKING')}
+                        navigation={navigation}
                         onViewTicket={(ride: any) => {
                             setCurrentRide(ride);
                             setCurrentScreen('TICKET');
@@ -71,20 +100,22 @@ export default function Index() {
                 );
             case 'BOOKING':
                 return (
-                    <BookingScreen
-                        user={user}
-                        onCancel={() => setCurrentScreen('HOME')}
-                        onRideConfirmed={(ride: any) => {
-                            setCurrentRide(ride);
-                            setCurrentScreen('TICKET');
-                        }}
+                    <RiderBookingScreen
+                        navigation={navigation}
+                        route={route}
                     />
                 );
             case 'TICKET':
                 return (
-                    <TicketScreen
-                        ride={currentRide}
-                        onClose={() => setCurrentScreen('HOME')}
+                    <RiderTrackingScreen
+                        navigation={navigation}
+                        route={{ params: { ride: currentRide } }}
+                    />
+                );
+            case 'RIDES':
+                return (
+                    <RiderRidesScreen
+                        navigation={navigation}
                     />
                 );
             default:
@@ -92,11 +123,7 @@ export default function Index() {
                     <RiderHomeScreen
                         user={user}
                         onLogout={handleLogout}
-                        onBookPress={() => setCurrentScreen('BOOKING')}
-                        onViewTicket={(ride: any) => {
-                            setCurrentRide(ride);
-                            setCurrentScreen('TICKET');
-                        }}
+                        navigation={navigation}
                     />
                 );
         }

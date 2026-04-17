@@ -3,15 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { X, Lock, LogIn } from 'lucide-react';
 
 const LoginModal = ({ isOpen, onClose, onLogin, title = "Access Portal", initialRole = "Dispatcher" }) => {
-    const [username, setUsername] = useState(initialRole === 'Dispatcher' ? 'admin' : '');
-    const [password, setPassword] = useState('');
+    const [username, setUsername] = useState(initialRole === 'Dispatcher' ? 'admin' : 'driver1');
+    const [password, setPassword] = useState(initialRole === 'Dispatcher' ? 'Ashland2026' : 'Ashland2026');
     const [error, setError] = useState(false);
 
     // Update defaults if role changes when modal re-opens
     React.useEffect(() => {
         if (isOpen) {
-            setUsername(initialRole === 'Dispatcher' ? 'admin' : '');
-            setPassword('');
+            setUsername(initialRole === 'Dispatcher' ? 'admin' : 'driver1');
+            setPassword(initialRole === 'Dispatcher' ? 'Ashland2026' : 'Ashland2026');
         }
     }, [isOpen, initialRole]);
 

@@ -20,15 +20,35 @@ const VehicleSchema = new mongoose.Schema({
         type: Number,
         required: true
     },
+    features: [{
+        type: String // e.g., 'wheelchair_lift', 'stretcher'
+    }],
     status: {
         type: String,
         enum: ['Active', 'In Shop'],
         default: 'Active'
     },
+    // --- IDENTIFICATION ---
+    licensePlate: {
+        type: String,
+        default: ''
+    },
     // --- ASSIGNMENT TRACKING ---
     assignedDriver: {
         type: String,
         default: null // Username of the driver
+    },
+    // --- LIVE LOCATION (mirrored from driver for quick fleet queries) ---
+    currentLocation: {
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point'
+        },
+        coordinates: {
+            type: [Number],
+            default: [0, 0] // [longitude, latitude]
+        }
     },
     // --- MAINTENANCE TRACKING ---
     engineHours: {
@@ -39,7 +59,7 @@ const VehicleSchema = new mongoose.Schema({
         type: Date
     },
     maintenanceHistory: [{
-        type: { type: String, required: true }, // e.g. 'Oil Change', 'Tire Rotation'
+        type: { type: String, required: true },
         date: { type: Date, default: Date.now },
         cost: { type: Number, default: 0 },
         notes: String,

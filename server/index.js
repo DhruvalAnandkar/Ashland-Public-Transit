@@ -4,6 +4,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const rateLimit = require('express-rate-limit');
 
 // Load environment variables
 dotenv.config();
@@ -18,6 +19,24 @@ app.use(express.json()); // Parses incoming JSON
 app.use(cors());         // Allows your React app to talk to this API
 app.use(helmet());       // Security headers
 app.use(morgan('dev'));  // Logging for development
+
+// Rate Limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' 
+    ? 200 : 2000,
+  skip: (req) => {
+    const open = [
+      '/api/rides/fleet/driver-ping',
+      '/api/rides/estimate-fare',
+      '/api/rides/check-capacity',
+      '/api/rides/track',
+      '/api/rides/fleet/live',
+    ]
+    return open.some(r => req.path.includes(r))
+  }
+})
+app.use('/api/', limiter);
 
 // Define Routes
 app.use('/api/auth', require('./routes/authRoutes'));
@@ -38,8 +57,17 @@ app.use((err, req, res, next) => {
     });
 });
 
+const http = require('http');
+const SocketService = require('./services/SocketService');
+
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+// Create HTTP Server to attach both Express and Socket.io
+const server = http.createServer(app);
+
+// Initialize WebSockets
+SocketService.init(server);
+
+server.listen(PORT, () => {
     console.log(` Expert Server started on port ${PORT}`);
 });

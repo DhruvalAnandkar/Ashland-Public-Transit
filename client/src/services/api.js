@@ -110,6 +110,17 @@ export const updateRideDetails = async (id, details) => {
     }
 };
 
+// DRIVER: Push current GPS location (REST fallback for rider live tracking)
+export const postDriverLocation = async (coordinates) => {
+    try {
+        const response = await axios.post(`${API_URL}/fleet/driver-location`, { coordinates });
+        return response.data;
+    } catch (error) {
+        console.error("Error posting driver location:", error);
+        throw error;
+    }
+};
+
 // RIDER: Track specific ride
 export const getRideByTicket = async (ticketId) => {
     try {

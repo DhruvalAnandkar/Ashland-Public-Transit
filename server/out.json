@@ -1,0 +1,28 @@
+{
+  "admin": {
+    "_id": "69b9610136333e4a23035839",
+    "username": "admin",
+    "password": "$2b$10$Cx3PB2ORi617LgKFeUatDOEm5hfkS8N5Wcey0CwfW6vwxTZeT/zEm",
+    "role": "Admin",
+    "mobilityNeeds": [],
+    "walletBalance": 0,
+    "__v": 0,
+    "createdAt": "2026-03-17T14:11:13.418Z",
+    "updatedAt": "2026-03-17T14:11:13.418Z"
+  },
+  "matchesAdmin": false,
+  "matchesAshland": false,
+  "allUsers": [
+    "admin",
+    "dispatcher",
+    "driver",
+    "driver1",
+    "driver2",
+    "driver3",
+    "driver4",
+    "driver5",
+    "driver6",
+    "driver7",
+    "User1"
+  ]
+}
