@@ -1,97 +1,129 @@
-# Ashland Public Transit - Distributed Fleet Management System 🚍
+# Ashland Public Transit - Distributed Fleet Management System
 
-> **URCA Senior Thesis Project**  
-> *Optimizing Rural Transit Visibility & Dispatch Efficiency*
+URCA Senior Thesis project focused on rural transit reliability, live dispatch visibility, and accessible rider booking across web and mobile.
 
-## 📖 Abstract
-This project addresses the critical inefficiencies in rural public transit systems, specifically the lack of real-time visibility for dispatchers and the manual, error-prone booking processes for riders. By implementing a **Distributed Fleet Management System**, this application synchronizes data between a central Dispatcher Portal, individual Driver Views, and a public-facing Passenger Tracker. The system aims to reduce "ghost rides" (untracked vehicles), eliminate overbooking through dynamic capacity checks, and improve accessibility for elderly/disabled populations via a simplified, high-contrast interface.
+## Overview
 
-## 🛠️ Technology Stack
-The application is built on the **MERN Stack** for full-stack JavaScript scalability:
-*   **MongoDB**: Flexible document storage for Rides and Vehicle tracking.
-*   **Express.js**: RESTful API layer handling booking logic and fleet status.
-*   **React**: Dynamic frontend with `framer-motion` for fluid UX and `lucide-react` for accessible iconography.
-*   **Recharts**: Data visualization for Executive Analytics.
-*   **Node.js**: Scalable backend runtime.
-*   **Leaflet**: Interactive mapping for route visualization.
-*   **QRCode**: Digital ticketing system for "Contactless Boarding".
+This monorepo contains three coordinated apps:
 
-## ✨ New Features (Feb 2026)
-*   **Dynamic Fare Engine**: Evaluation of passenger types (Veteran, Senior, Student) with automatic discounts and surcharges.
-*   **Executive Dashboard**: Real-time analytics reporting Revenue, Peak Hours, and Fleet Health.
-*   **Digital Boarding Pass**: Mobile-ready QR codes for confirmed passengers.
-*   **Smart Dispatching**: Toggle between "Manual Review" and "Auto-Accept" modes for ride requests.
+- `server`: Express + MongoDB API and Socket.IO real-time layer.
+- `client`: Web app for dispatcher, fleet manager, and driver operations.
+- `mobile`: Expo React Native rider app for booking, tracking, QR boarding pass, and ride history.
 
----
+The platform supports:
 
-## 🚀 Installation & Setup
+- Google Places-powered pickup and drop-off suggestions in mobile booking.
+- Dynamic fare estimation and same-day surcharge logic.
+- Live driver location broadcasts to dispatch and rider tracking screens.
+- Ticket-based ride tracking and QR code boarding flow.
+
+## Tech Stack
+
+- Node.js, Express, MongoDB (Mongoose)
+- React (web), Expo React Native (mobile)
+- Socket.IO (bi-directional live updates)
+- Google Maps + Places APIs
+- Framer Motion, Recharts, Leaflet/Google Maps integrations
+
+## Quick Start
 
 ### Prerequisites
-*   Node.js (v14+)
-*   MongoDB (Local or Atlas URI)
 
-### 1. Clone & Install Dependencies
-The project is divided into `client` (Frontend) and `server` (Backend). You must install dependencies for both.
+- Node.js 18+
+- MongoDB instance (local or Atlas)
+- Google Maps API key with required APIs enabled
+
+### Install
 
 ```bash
-# Install Server Dependencies
+# server
 cd server
 npm install
 
-# Install Client Dependencies
+# web client
 cd ../client
+npm install
+
+# mobile app
+cd ../mobile
 npm install
 ```
 
-### 2. Configure Environment
-Create a `.env` file in the `server` directory:
+### Server Environment
+
+Create `server/.env`:
 
 ```env
 PORT=5000
 MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_jwt_secret
 NODE_ENV=development
 ```
 
-### 3. Run the Application
-Start both the backend and frontend terminals:
+### Mobile Environment
+
+Set key in `mobile/.env` (or use `mobile/app.json` platform map key fields):
+
+```env
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_key
+```
+
+### Run
 
 ```bash
-# Terminal 1: Server
+# terminal 1
 cd server
-npm run dev  # or node index.js
+npm run dev
 
-# Terminal 2: Client
+# terminal 2
 cd client
 npm start
+
+# terminal 3
+cd mobile
+npm start
 ```
-*   **Frontend**: http://localhost:3000
-*   **Backend**: http://localhost:5000
 
----
+Default URLs:
 
-## � API Documentation (Driver Team Handoff)
+- Web client: `http://localhost:3000`
+- API + Socket server: `http://localhost:5000`
+- Expo Metro: shown by Expo CLI
 
-The Driver Module (built by the external team) should interact with the following endpoints to ensure synchronization with the Dispatcher Dashboard.
+## Google API Requirements
 
-### Base URL: `http://localhost:5000/api`
+For mobile place search + map rendering, enable these APIs in Google Cloud:
 
-| Method | Endpoint | Description | Payload / Params |
-| :--- | :--- | :--- | :--- |
-| **GET** | `/rides` | **Fetch Manifest**<br>Returns all active rides. Drivers should filter by their `assignedVehicle`. | None |
-| **PATCH** | `/rides/:id/status` | **Update Status**<br>Used when Driver starts or completes a ride. | `{ "status": "En-Route" \| "Completed" }` |
-| **PATCH** | `/rides/:id/vehicle` | **Claim Ride**<br>Used by "Floating Drivers" to self-assign a ride from the pool. | `{ "assignedVehicle": "Van 1" }` |
-| **GET** | `/vehicles` | **Fleet Check**<br>Check status of all assets (Active/In Shop). | None |
-| **POST** | `/rides` | **New Booking**<br>(Public) Creates a pending ride request. | `{ "passengerName": "...", "scheduledTime": "..." }` |
+- Places API (New) - required
+- Maps SDK for Android - required for Android map rendering
+- Maps SDK for iOS - required for iOS map rendering
 
-> **⚠️ NOTE:** The `POST /api/rides` endpoint includes a strict **Server-Side Capacity Check**. If the requested time slot has reached fleet capacity (Active Vehicles vs. Confirmed Rides), the server will return `409 Conflict`. Handle this error gracefully by asking the user to select a different time.
+Recommended:
 
----
+- Keep key restrictions minimal while debugging.
+- For production, move Places web-service calls to backend proxy and lock keys per app/service.
 
-## 🔐 Access Credentials (Demo)
+## Live Driver Location Notes
 
-*   **Dispatcher Portal**: Code `Ashland2026`
-*   **Driver View**: Code `ASH2026`
+- Driver web view uses browser geolocation to publish live GPS.
+- Rider mobile tracking subscribes to socket updates and falls back to periodic API polling.
+- If driver page shows `Driver GPS Waiting`, verify:
+  - Browser location permission is allowed
+  - Windows/macOS location services are enabled
+  - Driver app runs on `localhost` or HTTPS origin
 
----
+## Key API Endpoints
 
-*Verified for Production Build - Spring 2026*
+Base: `http://localhost:5000/api`
+
+- `POST /rides` - create rider booking
+- `GET /rides/:id` - fetch ride by id
+- `GET /rides/my-rides` - rider history (auth)
+- `PATCH /rides/:id/status` - update ride status
+- `PATCH /rides/:id/vehicle` - assign vehicle
+- `POST /rides/fleet/driver-location` - driver GPS fallback update
+
+## Repository Notes
+
+- `client/requirements.txt` and `server/requirements.txt` are dependency snapshots for quick review.
+- Source of truth for installable packages remains each app's `package.json`.
