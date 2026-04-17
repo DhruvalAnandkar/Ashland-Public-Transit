@@ -1,11 +1,29 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
-  MapPin, ShieldCheck, ArrowRight, Bus, Clock,
-  Phone, Shield, Zap, Users, Navigation, Sparkles,
-  ChevronRight, Globe, Radio,
+  MapPin,
+  ShieldCheck,
+  ArrowRight,
+  Bus,
+  Clock,
+  Phone,
+  Shield,
+  Zap,
+  Users,
+  Navigation,
+  Sparkles,
+  ChevronRight,
+  Globe,
+  Radio,
 } from "lucide-react";
-import { motion, useScroll, useTransform, useMotionValue, useSpring, AnimatePresence } from "framer-motion";
+import {
+  motion,
+  useScroll,
+  useTransform,
+  useMotionValue,
+  useSpring,
+  AnimatePresence,
+} from "framer-motion";
 import { getVehicles } from "../services/api";
 import LeafletMap from "./LeafletMap";
 
@@ -17,15 +35,18 @@ const useTilt = (intensity = 15) => {
   const springX = useSpring(rotateX, { stiffness: 200, damping: 20 });
   const springY = useSpring(rotateY, { stiffness: 200, damping: 20 });
 
-  const onMouseMove = useCallback((e) => {
-    const el = ref.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width - 0.5;
-    const y = (e.clientY - rect.top) / rect.height - 0.5;
-    rotateX.set(-y * intensity);
-    rotateY.set(x * intensity);
-  }, [intensity, rotateX, rotateY]);
+  const onMouseMove = useCallback(
+    (e) => {
+      const el = ref.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const x = (e.clientX - rect.left) / rect.width - 0.5;
+      const y = (e.clientY - rect.top) / rect.height - 0.5;
+      rotateX.set(-y * intensity);
+      rotateY.set(x * intensity);
+    },
+    [intensity, rotateX, rotateY],
+  );
 
   const onMouseLeave = useCallback(() => {
     rotateX.set(0);
@@ -43,8 +64,10 @@ const AnimatedNum = ({ target, suffix = "", duration = 1.8 }) => {
 
   useEffect(() => {
     const observer = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting && !started) setStarted(true); },
-      { threshold: 0.3 }
+      ([entry]) => {
+        if (entry.isIntersecting && !started) setStarted(true);
+      },
+      { threshold: 0.3 },
     );
     if (ref.current) observer.observe(ref.current);
     return () => observer.disconnect();
@@ -64,17 +87,56 @@ const AnimatedNum = ({ target, suffix = "", duration = 1.8 }) => {
     return () => cancelAnimationFrame(frame);
   }, [started, target, duration]);
 
-  return <span ref={ref} className="stat-value">{val}{suffix}</span>;
+  return (
+    <span ref={ref} className="stat-value">
+      {val}
+      {suffix}
+    </span>
+  );
 };
 
 // ─── TRANSIT VEHICLE SVG ─────────────────────────────────────────
 const TransitBusSVG = () => (
-  <svg width="80" height="40" viewBox="0 0 80 40" fill="none" className="transit-vehicle">
+  <svg
+    width="80"
+    height="40"
+    viewBox="0 0 80 40"
+    fill="none"
+    className="transit-vehicle"
+  >
     <rect x="5" y="8" width="65" height="22" rx="6" fill="#2563eb" />
-    <rect x="8" y="12" width="10" height="8" rx="2" fill="rgba(255,255,255,0.85)" />
-    <rect x="22" y="12" width="10" height="8" rx="2" fill="rgba(255,255,255,0.85)" />
-    <rect x="36" y="12" width="10" height="8" rx="2" fill="rgba(255,255,255,0.85)" />
-    <rect x="50" y="12" width="14" height="14" rx="2" fill="rgba(255,255,255,0.6)" />
+    <rect
+      x="8"
+      y="12"
+      width="10"
+      height="8"
+      rx="2"
+      fill="rgba(255,255,255,0.85)"
+    />
+    <rect
+      x="22"
+      y="12"
+      width="10"
+      height="8"
+      rx="2"
+      fill="rgba(255,255,255,0.85)"
+    />
+    <rect
+      x="36"
+      y="12"
+      width="10"
+      height="8"
+      rx="2"
+      fill="rgba(255,255,255,0.85)"
+    />
+    <rect
+      x="50"
+      y="12"
+      width="14"
+      height="14"
+      rx="2"
+      fill="rgba(255,255,255,0.6)"
+    />
     <circle cx="20" cy="32" r="5" fill="#1e293b" />
     <circle cx="20" cy="32" r="2.5" fill="#94a3b8" />
     <circle cx="55" cy="32" r="5" fill="#1e293b" />
@@ -86,7 +148,11 @@ const TransitBusSVG = () => (
 
 // ─── ANIMATED ROUTE SVG ──────────────────────────────────────────
 const AnimatedRoute = () => (
-  <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 600 400" preserveAspectRatio="none">
+  <svg
+    className="absolute inset-0 w-full h-full pointer-events-none"
+    viewBox="0 0 600 400"
+    preserveAspectRatio="none"
+  >
     <defs>
       <linearGradient id="routeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
         <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.3" />
@@ -103,7 +169,14 @@ const AnimatedRoute = () => (
       strokeLinecap="round"
     />
     <circle cx="50" cy="350" r="6" fill="#22c55e" className="route-dot-pulse" />
-    <circle cx="550" cy="50" r="6" fill="#ef4444" className="route-dot-pulse" style={{ animationDelay: "1s" }} />
+    <circle
+      cx="550"
+      cy="50"
+      r="6"
+      fill="#ef4444"
+      className="route-dot-pulse"
+      style={{ animationDelay: "1s" }}
+    />
   </svg>
 );
 
@@ -116,8 +189,10 @@ const LandingPage = ({ onLogin }) => {
   const [totalRides, setTotalRides] = useState(0);
   const [enableMotionFx, setEnableMotionFx] = useState(false);
   const { scrollYProgress } = useScroll();
-  const heroY = useTransform(scrollYProgress, [0, 0.4], [0, -80]);
-  const heroScale = useTransform(scrollYProgress, [0, 0.3], [1, 0.97]);
+  // Softened parallax range: -80 → -40 reduces the per-frame JS work
+  // and prevents the hero from visually clipping under the nav on fast scrolls
+  const heroY = useTransform(scrollYProgress, [0, 0.5], [0, -40]);
+  const heroScale = useTransform(scrollYProgress, [0, 0.4], [1, 0.98]);
 
   // Mouse parallax for hero
   const mouseX = useMotionValue(0);
@@ -125,13 +200,17 @@ const LandingPage = ({ onLogin }) => {
   const springMX = useSpring(mouseX, { stiffness: 50, damping: 20 });
   const springMY = useSpring(mouseY, { stiffness: 50, damping: 20 });
 
-  const handleMouseMove = useCallback((e) => {
-    if (!enableMotionFx) return;
-    const { clientX, clientY, currentTarget } = e;
-    const { width, height, left, top } = currentTarget.getBoundingClientRect();
-    mouseX.set(((clientX - left) / width - 0.5) * 20);
-    mouseY.set(((clientY - top) / height - 0.5) * 20);
-  }, [enableMotionFx, mouseX, mouseY]);
+  const handleMouseMove = useCallback(
+    (e) => {
+      if (!enableMotionFx) return;
+      const { clientX, clientY, currentTarget } = e;
+      const { width, height, left, top } =
+        currentTarget.getBoundingClientRect();
+      mouseX.set(((clientX - left) / width - 0.5) * 20);
+      mouseY.set(((clientY - top) / height - 0.5) * 20);
+    },
+    [enableMotionFx, mouseX, mouseY],
+  );
 
   // 3D tilt for map
   const mapTilt = useTilt(8);
@@ -175,34 +254,78 @@ const LandingPage = ({ onLogin }) => {
 
   const features = [
     {
-      icon: Clock, title: "Real-Time GPS Tracking",
+      icon: Clock,
+      title: "Real-Time GPS Tracking",
       desc: "Live sub-second GPS precision across every vehicle in the Ashland transit network. Watch your ride approach in real-time.",
-      color: "text-blue-600", bg: "bg-blue-50", border: "border-blue-100",
-      gradient: "from-blue-500 to-blue-600", glow: "rgba(59,130,246,0.1)",
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+      border: "border-blue-100",
+      gradient: "from-blue-500 to-blue-600",
+      glow: "rgba(59,130,246,0.1)",
     },
     {
-      icon: Zap, title: "30-Second Booking",
+      icon: Zap,
+      title: "30-Second Booking",
       desc: "Smart address autocomplete, instant fare estimation, and seamless checkout. From tap to booked in under 30 seconds.",
-      color: "text-emerald-600", bg: "bg-emerald-50", border: "border-emerald-100",
-      gradient: "from-emerald-500 to-emerald-600", glow: "rgba(16,185,129,0.1)",
+      color: "text-emerald-600",
+      bg: "bg-emerald-50",
+      border: "border-emerald-100",
+      gradient: "from-emerald-500 to-emerald-600",
+      glow: "rgba(16,185,129,0.1)",
     },
     {
-      icon: Shield, title: "Verified & Insured",
+      icon: Shield,
+      title: "Verified & Insured",
       desc: "Every driver is background-checked. Real-time dispatch monitoring plus 24/7 emergency support line for total peace of mind.",
-      color: "text-indigo-600", bg: "bg-indigo-50", border: "border-indigo-100",
-      gradient: "from-indigo-500 to-indigo-600", glow: "rgba(99,102,241,0.1)",
+      color: "text-indigo-600",
+      bg: "bg-indigo-50",
+      border: "border-indigo-100",
+      gradient: "from-indigo-500 to-indigo-600",
+      glow: "rgba(99,102,241,0.1)",
     },
   ];
 
   const stats = [
-    { label: "Active Vehicles", value: activeCount, icon: Bus, color: "text-blue-600", bg: "bg-blue-50", glow: "shadow-blue-500/10" },
-    { label: "Rides Completed", value: totalRides, icon: Navigation, color: "text-emerald-600", bg: "bg-emerald-50", glow: "shadow-emerald-500/10" },
-    { label: "Service Zones", value: 12, icon: Globe, color: "text-violet-600", bg: "bg-violet-50", glow: "shadow-violet-500/10" },
-    { label: "Rider Satisfaction", value: 98, suffix: "%", icon: Users, color: "text-amber-600", bg: "bg-amber-50", glow: "shadow-amber-500/10" },
+    {
+      label: "Active Vehicles",
+      value: activeCount,
+      icon: Bus,
+      color: "text-blue-600",
+      bg: "bg-blue-50",
+      glow: "shadow-blue-500/10",
+    },
+    {
+      label: "Rides Completed",
+      value: totalRides,
+      icon: Navigation,
+      color: "text-emerald-600",
+      bg: "bg-emerald-50",
+      glow: "shadow-emerald-500/10",
+    },
+    {
+      label: "Service Zones",
+      value: 12,
+      icon: Globe,
+      color: "text-violet-600",
+      bg: "bg-violet-50",
+      glow: "shadow-violet-500/10",
+    },
+    {
+      label: "Rider Satisfaction",
+      value: 98,
+      suffix: "%",
+      icon: Users,
+      color: "text-amber-600",
+      bg: "bg-amber-50",
+      glow: "shadow-amber-500/10",
+    },
   ];
 
   return (
-    <div className="relative flex flex-col items-center overflow-hidden" onMouseMove={enableMotionFx ? handleMouseMove : undefined}>
+    <div
+      className="relative flex flex-col items-center overflow-x-hidden"
+      onMouseMove={enableMotionFx ? handleMouseMove : undefined}
+    >
       {/* ═══ AURORA BACKGROUND ═════════════════════════════════════ */}
       <div className="aurora-bg">
         <div className="aurora-blob aurora-blob-1" />
@@ -251,12 +374,18 @@ const LandingPage = ({ onLogin }) => {
               <motion.h1
                 initial={{ rotateX: 30, y: 40, opacity: 0 }}
                 animate={{ rotateX: 0, y: 0, opacity: 1 }}
-                transition={{ duration: 1, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
+                transition={{
+                  duration: 1,
+                  ease: [0.22, 1, 0.36, 1],
+                  delay: 0.15,
+                }}
                 className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight"
                 style={{ transformStyle: "preserve-3d" }}
               >
                 <motion.span
-                  style={enableMotionFx ? { x: springMX, y: springMY } : undefined}
+                  style={
+                    enableMotionFx ? { x: springMX, y: springMY } : undefined
+                  }
                   className="inline-block text-slate-800"
                 >
                   Ashland
@@ -282,7 +411,8 @@ const LandingPage = ({ onLogin }) => {
               className="text-base md:text-lg text-slate-500 font-medium leading-relaxed max-w-xl"
             >
               The smart, reliable, and accessible way to move around Ashland.
-              Book rides in seconds, track in real-time, travel with total confidence.
+              Book rides in seconds, track in real-time, travel with total
+              confidence.
             </motion.p>
 
             {/* CTA Buttons */}
@@ -335,9 +465,14 @@ const LandingPage = ({ onLogin }) => {
                 { icon: Shield, text: "Fully Insured" },
                 { icon: Users, text: "ADA Accessible" },
               ].map((badge, i) => (
-                <div key={i} className="flex items-center gap-1.5 text-slate-400">
+                <div
+                  key={i}
+                  className="flex items-center gap-1.5 text-slate-400"
+                >
                   <badge.icon size={14} />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">{badge.text}</span>
+                  <span className="text-[11px] font-bold uppercase tracking-wider">
+                    {badge.text}
+                  </span>
                 </div>
               ))}
             </motion.div>
@@ -368,7 +503,8 @@ const LandingPage = ({ onLogin }) => {
               <div
                 className="absolute inset-0 rounded-2xl pointer-events-none"
                 style={{
-                  background: "linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(248,250,255,0.6) 100%)",
+                  background:
+                    "linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(248,250,255,0.6) 100%)",
                 }}
               />
             </motion.div>
@@ -377,22 +513,35 @@ const LandingPage = ({ onLogin }) => {
             <motion.div
               initial={{ opacity: 0, y: 30, scale: 0.85 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ delay: 1.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                delay: 1.1,
+                duration: 0.6,
+                ease: [0.22, 1, 0.36, 1],
+              }}
               whileHover={{ scale: 1.06, y: -4 }}
               className="absolute -bottom-4 -left-4 glass-panel-strong p-4 pr-6 rounded-2xl shadow-xl cursor-default"
             >
               <div className="flex items-center gap-3">
                 <motion.div
                   animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  transition={{
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut",
+                  }}
                   className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"
                 >
                   <Bus size={20} />
                 </motion.div>
                 <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Fleet</p>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                    Fleet
+                  </p>
                   <p className="text-xl font-black text-slate-800 tracking-tight">
-                    <AnimatedNum target={activeCount} /> <span className="text-xs font-bold text-slate-400">active</span>
+                    <AnimatedNum target={activeCount} />{" "}
+                    <span className="text-xs font-bold text-slate-400">
+                      active
+                    </span>
                   </p>
                 </div>
               </div>
@@ -402,13 +551,19 @@ const LandingPage = ({ onLogin }) => {
             <motion.div
               initial={{ opacity: 0, x: 20, scale: 0.85 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{ delay: 1.4, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                delay: 1.4,
+                duration: 0.5,
+                ease: [0.22, 1, 0.36, 1],
+              }}
               className="absolute -top-3 -right-3 glass-panel-strong px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
             >
               <span className="relative flex h-2 w-2 live-dot text-emerald-500">
                 <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="text-[11px] font-bold text-emerald-600 tracking-wide">Systems Online</span>
+              <span className="text-[11px] font-bold text-emerald-600 tracking-wide">
+                Systems Online
+              </span>
             </motion.div>
           </motion.div>
         </div>
@@ -438,7 +593,11 @@ const LandingPage = ({ onLogin }) => {
               initial={{ opacity: 0, y: 30, scale: 0.9 }}
               whileInView={{ opacity: 1, y: 0, scale: 1 }}
               viewport={{ once: true, amount: 0.3 }}
-              transition={{ delay: idx * 0.1, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              transition={{
+                delay: idx * 0.1,
+                duration: 0.6,
+                ease: [0.22, 1, 0.36, 1],
+              }}
               whileHover={{ y: -6, scale: 1.03 }}
               className={`glass-panel-strong rounded-2xl p-6 text-center cursor-default shadow-lg ${stat.glow}`}
             >
@@ -473,7 +632,8 @@ const LandingPage = ({ onLogin }) => {
             Why <span className="text-gradient-hero">Ashland Transit</span>?
           </h2>
           <p className="text-slate-400 text-sm font-medium mt-3 max-w-md mx-auto leading-relaxed">
-            Engineered for riders, dispatchers, and drivers — a complete transit ecosystem.
+            Engineered for riders, dispatchers, and drivers — a complete transit
+            ecosystem.
           </p>
         </motion.div>
 
@@ -490,7 +650,11 @@ const LandingPage = ({ onLogin }) => {
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.3 }}
-                transition={{ delay: idx * 0.12, duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+                transition={{
+                  delay: idx * 0.12,
+                  duration: 0.65,
+                  ease: [0.22, 1, 0.36, 1],
+                }}
                 className={`feature-card glass-panel-strong p-7 rounded-2xl border ${feature.border} cursor-default`}
               >
                 <div
@@ -507,7 +671,9 @@ const LandingPage = ({ onLogin }) => {
                   {feature.desc}
                 </p>
 
-                <div className={`feature-line mt-5 h-1 rounded-full bg-gradient-to-r ${feature.gradient} opacity-50`} />
+                <div
+                  className={`feature-line mt-5 h-1 rounded-full bg-gradient-to-r ${feature.gradient} opacity-50`}
+                />
               </motion.div>
             );
           })}
@@ -530,7 +696,8 @@ const LandingPage = ({ onLogin }) => {
               Ready to ride?
             </h3>
             <p className="text-sm text-slate-400 font-medium mt-1">
-              Book your first trip in under 30 seconds. Already have a ticket? Track it live.
+              Book your first trip in under 30 seconds. Already have a ticket?
+              Track it live.
             </p>
           </div>
           <div className="flex gap-3 flex-wrap">

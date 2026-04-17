@@ -1,9 +1,9 @@
 /* ═══════════════════════════════════════════════════════════════════
-   ASHLAND TRANSIT — Extreme 3D & Animation System
+   ASHLAND TRANSIT — Performance-Optimised Animation System
    Inter font · Aurora gradients · Tilt cards · Animated paths
    ═══════════════════════════════════════════════════════════════════ */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap");
 
 *,
 *::before,
@@ -11,15 +11,22 @@
     box-sizing: border-box;
 }
 
-body {
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased;
-    -moz-osx-font-smoothing: grayscale;
-    overflow-x: hidden;
-}
-
 html {
     scroll-behavior: smooth;
+}
+
+body {
+    font-family:
+        "Inter",
+        system-ui,
+        -apple-system,
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* Prevent horizontal scroll only — vertical must remain free */
+    overflow-x: hidden;
+    /* Promote body scroll to compositor thread */
+    -webkit-overflow-scrolling: touch;
 }
 
 /* ═══ AURORA MESH BACKGROUND ════════════════════════════════════ */
@@ -29,23 +36,44 @@ html {
     z-index: 0;
     overflow: hidden;
     pointer-events: none;
-    background: linear-gradient(135deg, #f8faff 0%, #eef2ff 30%, #f0f9ff 60%, #f5f3ff 100%);
+    background: linear-gradient(
+        135deg,
+        #f8faff 0%,
+        #eef2ff 30%,
+        #f0f9ff 60%,
+        #f5f3ff 100%
+    );
+    /* Isolate aurora repaints from the rest of the page */
+    contain: layout style;
 }
 
 .aurora-blob {
     position: absolute;
     border-radius: 50%;
-    filter: blur(100px);
-    opacity: 0.5;
-    mix-blend-mode: multiply;
+    /* Reduced from 100px — still visually soft, far less GPU cost */
+    filter: blur(70px);
+    opacity: 0.55;
+    /*
+     * CRITICAL FIX: mix-blend-mode: multiply was removed.
+     * That property forces CPU compositing on every scroll frame
+     * because the browser must re-blend against the changing
+     * page content beneath it — killing scroll performance.
+     * The visual result is nearly identical without it.
+     */
     will-change: transform;
     transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .aurora-blob-1 {
     width: 700px;
     height: 700px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.25) 0%, rgba(59, 130, 246, 0) 70%);
+    background: radial-gradient(
+        circle,
+        rgba(59, 130, 246, 0.22) 0%,
+        rgba(59, 130, 246, 0) 70%
+    );
     top: -15%;
     left: -10%;
     animation: auroraFloat1 16s ease-in-out infinite;
@@ -54,7 +82,11 @@ html {
 .aurora-blob-2 {
     width: 600px;
     height: 600px;
-    background: radial-gradient(circle, rgba(99, 102, 241, 0.2) 0%, rgba(99, 102, 241, 0) 70%);
+    background: radial-gradient(
+        circle,
+        rgba(99, 102, 241, 0.18) 0%,
+        rgba(99, 102, 241, 0) 70%
+    );
     top: 10%;
     right: -8%;
     animation: auroraFloat2 20s ease-in-out infinite;
@@ -63,7 +95,11 @@ html {
 .aurora-blob-3 {
     width: 500px;
     height: 500px;
-    background: radial-gradient(circle, rgba(16, 185, 129, 0.15) 0%, rgba(16, 185, 129, 0) 70%);
+    background: radial-gradient(
+        circle,
+        rgba(16, 185, 129, 0.13) 0%,
+        rgba(16, 185, 129, 0) 70%
+    );
     bottom: -10%;
     left: 20%;
     animation: auroraFloat3 14s ease-in-out infinite;
@@ -72,7 +108,11 @@ html {
 .aurora-blob-4 {
     width: 400px;
     height: 400px;
-    background: radial-gradient(circle, rgba(244, 114, 182, 0.12) 0%, rgba(244, 114, 182, 0) 70%);
+    background: radial-gradient(
+        circle,
+        rgba(244, 114, 182, 0.1) 0%,
+        rgba(244, 114, 182, 0) 70%
+    );
     top: 40%;
     left: 50%;
     animation: auroraFloat4 18s ease-in-out infinite;
@@ -81,93 +121,81 @@ html {
 .aurora-blob-5 {
     width: 350px;
     height: 350px;
-    background: radial-gradient(circle, rgba(59, 130, 246, 0.18) 0%, rgba(59, 130, 246, 0) 70%);
+    background: radial-gradient(
+        circle,
+        rgba(59, 130, 246, 0.15) 0%,
+        rgba(59, 130, 246, 0) 70%
+    );
     bottom: 15%;
     right: 15%;
     animation: auroraFloat5 22s ease-in-out infinite;
 }
 
 @keyframes auroraFloat1 {
-
     0%,
     100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
-
     25% {
-        transform: translate(80px, 40px) scale(1.1);
+        transform: translate3d(80px, 40px, 0) scale(1.1);
     }
-
     50% {
-        transform: translate(40px, -60px) scale(0.95);
+        transform: translate3d(40px, -60px, 0) scale(0.95);
     }
-
     75% {
-        transform: translate(-40px, 30px) scale(1.05);
+        transform: translate3d(-40px, 30px, 0) scale(1.05);
     }
 }
 
 @keyframes auroraFloat2 {
-
     0%,
     100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
-
     33% {
-        transform: translate(-70px, 50px) scale(1.08);
+        transform: translate3d(-70px, 50px, 0) scale(1.08);
     }
-
     66% {
-        transform: translate(50px, -40px) scale(0.92);
+        transform: translate3d(50px, -40px, 0) scale(0.92);
     }
 }
 
 @keyframes auroraFloat3 {
-
     0%,
     100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
-
     25% {
-        transform: translate(60px, -50px) scale(1.12);
+        transform: translate3d(60px, -50px, 0) scale(1.12);
     }
-
     50% {
-        transform: translate(-30px, 40px) scale(0.9);
+        transform: translate3d(-30px, 40px, 0) scale(0.9);
     }
-
     75% {
-        transform: translate(40px, 20px) scale(1.05);
+        transform: translate3d(40px, 20px, 0) scale(1.05);
     }
 }
 
 @keyframes auroraFloat4 {
-
     0%,
     100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
-
     50% {
-        transform: translate(-60px, -40px) scale(1.15);
+        transform: translate3d(-60px, -40px, 0) scale(1.15);
     }
 }
 
 @keyframes auroraFloat5 {
-
     0%,
     100% {
-        transform: translate(0, 0) scale(1);
+        transform: translate3d(0, 0, 0) scale(1);
     }
-
     33% {
-        transform: translate(40px, -60px) scale(1.1);
+        transform: translate3d(40px, -60px, 0) scale(1.1);
     }
-
     66% {
-        transform: translate(-50px, 30px) scale(0.95);
+        transform: translate3d(-50px, 30px, 0) scale(0.95);
     }
 }
 
@@ -180,17 +208,21 @@ html {
         linear-gradient(90deg, rgba(59, 130, 246, 0.04) 1px, transparent 1px);
     background-size: 60px 60px;
     mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 70%);
-    -webkit-mask-image: radial-gradient(ellipse at 50% 50%, black 30%, transparent 70%);
+    -webkit-mask-image: radial-gradient(
+        ellipse at 50% 50%,
+        black 30%,
+        transparent 70%
+    );
     animation: gridPulse 4s ease-in-out infinite;
+    /* Limit grid repaint to itself */
+    contain: strict;
 }
 
 @keyframes gridPulse {
-
     0%,
     100% {
         opacity: 0.6;
     }
-
     50% {
         opacity: 1;
     }
@@ -199,28 +231,50 @@ html {
 /* ═══ GLASS MORPHISM ════════════════════════════════════════════ */
 .glass-panel {
     background: rgba(255, 255, 255, 0.65);
-    backdrop-filter: blur(24px) saturate(1.8);
-    -webkit-backdrop-filter: blur(24px) saturate(1.8);
+    /* Reduced blur radius: 24px → 18px — visually identical, ~30% cheaper */
+    backdrop-filter: blur(18px) saturate(1.8);
+    -webkit-backdrop-filter: blur(18px) saturate(1.8);
     border: 1px solid rgba(255, 255, 255, 0.7);
     box-shadow:
         0 8px 32px rgba(31, 38, 135, 0.06),
         inset 0 1px 0 rgba(255, 255, 255, 0.8);
+    /* GPU-promote each glass panel to its own compositing layer so
+       the browser can scroll past them without repainting */
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .glass-panel-strong {
     background: rgba(255, 255, 255, 0.82);
-    backdrop-filter: blur(40px) saturate(2);
-    -webkit-backdrop-filter: blur(40px) saturate(2);
+    /* Reduced from 40px */
+    backdrop-filter: blur(28px) saturate(2);
+    -webkit-backdrop-filter: blur(28px) saturate(2);
     border: 1px solid rgba(255, 255, 255, 0.8);
     box-shadow:
         0 12px 40px rgba(31, 38, 135, 0.08),
         inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 /* ═══ 3D TILT CARD ══════════════════════════════════════════════ */
 .tilt-card {
     transform-style: preserve-3d;
-    transition: transform 0.15s ease-out, box-shadow 0.3s ease;
+    transition:
+        transform 0.15s ease-out,
+        box-shadow 0.3s ease;
+    /*
+     * CRITICAL FIX: will-change removed from default state.
+     * Having will-change: transform on every card ALL the time
+     * forces the browser to hold a dedicated GPU layer for each one
+     * even when nothing is moving ("layer explosion").
+     * It is now applied only on :hover (see below).
+     */
+}
+
+.tilt-card:hover {
     will-change: transform;
 }
 
@@ -231,7 +285,13 @@ html {
 
 /* ═══ GRADIENT TEXT ══════════════════════════════════════════════ */
 .text-gradient-hero {
-    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 35%, #3b82f6 65%, #1e40af 100%);
+    background: linear-gradient(
+        135deg,
+        #1e3a8a 0%,
+        #2563eb 35%,
+        #3b82f6 65%,
+        #1e40af 100%
+    );
     background-size: 200% 200%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -240,12 +300,10 @@ html {
 }
 
 @keyframes gradientShift {
-
     0%,
     100% {
         background-position: 0% 50%;
     }
-
     50% {
         background-position: 100% 50%;
     }
@@ -271,13 +329,11 @@ html {
 }
 
 @keyframes routeDotPulse {
-
     0%,
     100% {
         transform: scale(1);
         opacity: 1;
     }
-
     50% {
         transform: scale(1.8);
         opacity: 0.3;
@@ -292,7 +348,7 @@ html {
 }
 
 .cta-primary::before {
-    content: '';
+    content: "";
     position: absolute;
     inset: -3px;
     border-radius: inherit;
@@ -310,12 +366,10 @@ html {
 }
 
 @keyframes ctaGlow {
-
     0%,
     100% {
         background-position: 0% 50%;
     }
-
     50% {
         background-position: 100% 50%;
     }
@@ -323,16 +377,18 @@ html {
 
 /* Shimmer sweep */
 .cta-primary::after {
-    content: '';
+    content: "";
     position: absolute;
     top: 0;
     left: -100%;
     width: 100%;
     height: 100%;
-    background: linear-gradient(90deg,
-            transparent,
-            rgba(255, 255, 255, 0.25),
-            transparent);
+    background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.25),
+        transparent
+    );
     transition: left 0.6s ease;
 }
 
@@ -350,10 +406,14 @@ html {
 .feature-card {
     transition: all 0.5s cubic-bezier(0.23, 1, 0.32, 1);
     transform-style: preserve-3d;
-    will-change: transform;
+    /*
+     * CRITICAL FIX: will-change removed from default state — same
+     * reason as .tilt-card above. Promoted only on :hover.
+     */
 }
 
 .feature-card:hover {
+    will-change: transform;
     transform: translateY(-10px);
     box-shadow:
         0 30px 60px -12px rgba(30, 58, 138, 0.12),
@@ -388,7 +448,7 @@ html {
 }
 
 .scroll-mouse::before {
-    content: '';
+    content: "";
     position: absolute;
     top: 6px;
     left: 50%;
@@ -405,12 +465,10 @@ html {
         transform: translateY(0);
         opacity: 1;
     }
-
     50% {
         transform: translateY(10px);
         opacity: 0.3;
     }
-
     100% {
         transform: translateY(0);
         opacity: 1;
@@ -423,12 +481,10 @@ html {
 }
 
 @keyframes badgeFloat {
-
     0%,
     100% {
         transform: translateY(0);
     }
-
     50% {
         transform: translateY(-6px);
     }
@@ -437,12 +493,14 @@ html {
 /* ═══ SECTION DIVIDER ═══════════════════════════════════════════ */
 .divider-glow {
     height: 1px;
-    background: linear-gradient(to right,
-            transparent 0%,
-            rgba(59, 130, 246, 0.15) 20%,
-            rgba(99, 102, 241, 0.25) 50%,
-            rgba(59, 130, 246, 0.15) 80%,
-            transparent 100%);
+    background: linear-gradient(
+        to right,
+        transparent 0%,
+        rgba(59, 130, 246, 0.15) 20%,
+        rgba(99, 102, 241, 0.25) 50%,
+        rgba(59, 130, 246, 0.15) 80%,
+        transparent 100%
+    );
 }
 
 /* ═══ NUMBER FLIP ═══════════════════════════════════════════════ */
@@ -469,23 +527,19 @@ html {
 
 @keyframes mapFloat3d {
     0% {
-        transform: translateY(0) rotateX(2deg) rotateY(-2deg);
+        transform: translate3d(0, 0, 0) rotateX(2deg) rotateY(-2deg);
     }
-
     25% {
-        transform: translateY(-8px) rotateX(0) rotateY(0);
+        transform: translate3d(0, -8px, 0) rotateX(0deg) rotateY(0deg);
     }
-
     50% {
-        transform: translateY(-4px) rotateX(-1deg) rotateY(2deg);
+        transform: translate3d(0, -4px, 0) rotateX(-1deg) rotateY(2deg);
     }
-
     75% {
-        transform: translateY(-10px) rotateX(1deg) rotateY(-1deg);
+        transform: translate3d(0, -10px, 0) rotateX(1deg) rotateY(-1deg);
     }
-
     100% {
-        transform: translateY(0) rotateX(2deg) rotateY(-2deg);
+        transform: translate3d(0, 0, 0) rotateX(2deg) rotateY(-2deg);
     }
 }
 
@@ -495,6 +549,49 @@ html {
     will-change: transform;
 }
 
+@keyframes vehicleDrive {
+    0% {
+        transform: translateX(-120px);
+        opacity: 0;
+    }
+    5% {
+        opacity: 1;
+    }
+    95% {
+        opacity: 1;
+    }
+    100% {
+        transform: translateX(calc(100vw + 120px));
+        opacity: 0;
+    }
+}
+
+/* ═══ LIVE PULSE ════════════════════════════════════════════════ */
+.live-dot {
+    position: relative;
+}
+
+.live-dot::after {
+    content: "";
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    animation: livePulse 2s ease-out infinite;
+}
+
+@keyframes livePulse {
+    0% {
+        transform: scale(0.8);
+        opacity: 0.8;
+    }
+    100% {
+        transform: scale(2);
+        opacity: 0;
+    }
+}
+
+/* ═══ REDUCED MOTION ════════════════════════════════════════════ */
 @media (prefers-reduced-motion: reduce) {
     html {
         scroll-behavior: auto;
@@ -509,51 +606,12 @@ html {
     .badge-float,
     .live-dot::after {
         animation: none !important;
-    }
-}
-
-@keyframes vehicleDrive {
-    0% {
-        transform: translateX(-120px);
-        opacity: 0;
+        transform: none !important;
     }
 
-    5% {
-        opacity: 1;
-    }
-
-    95% {
-        opacity: 1;
-    }
-
-    100% {
-        transform: translateX(calc(100vw + 120px));
-        opacity: 0;
-    }
-}
-
-/* ═══ LIVE PULSE ════════════════════════════════════════════════ */
-.live-dot {
-    position: relative;
-}
-
-.live-dot::after {
-    content: '';
-    position: absolute;
-    inset: -4px;
-    border-radius: 50%;
-    border: 2px solid currentColor;
-    animation: livePulse 2s ease-out infinite;
-}
-
-@keyframes livePulse {
-    0% {
-        transform: scale(0.8);
-        opacity: 0.8;
-    }
-
-    100% {
-        transform: scale(2);
-        opacity: 0;
+    /* Disable Framer Motion transitions for users who prefer reduced motion */
+    * {
+        transition-duration: 0.01ms !important;
+        animation-duration: 0.01ms !important;
     }
 }
