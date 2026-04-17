@@ -31,6 +31,28 @@ export const createRide = async (rideData) => {
     return response.data;
 };
 
+// RIDER: Create Stripe checkout session for a ride
+export const createRideCheckoutSession = async (rideId, payload = {}) => {
+    const response = await axios.post(`${API_URL}/${rideId}/payments/checkout-session`, payload);
+    return response.data;
+};
+
+// RIDER: Verify Stripe checkout success and persist payment status
+export const verifyRideCheckoutSession = async (sessionId, ticketId) => {
+    const response = await axios.get(`${API_URL}/payments/verify-session`, {
+        params: { sessionId, ticketId },
+    });
+    return response.data;
+};
+
+// RIDER: Download receipt for a paid ride
+export const downloadRideReceipt = async (ticketId) => {
+    const response = await axios.get(`${API_URL}/track/${encodeURIComponent(ticketId)}/receipt`, {
+        responseType: "blob",
+    });
+    return response.data;
+};
+
 // STAFF: Get the full manifest
 export const getRides = async () => {
     const response = await axios.get(API_URL);
@@ -162,4 +184,10 @@ export const getAuditLogs = async () => {
         console.error("Error fetching audit logs:", error);
         return [];
     }
+};
+
+// DISPATCHER: Full visibility snapshot across riders/drivers/rides
+export const getOperationsSnapshot = async () => {
+    const response = await axios.get(`${API_URL}/dispatcher/operations-snapshot`);
+    return response.data;
 };

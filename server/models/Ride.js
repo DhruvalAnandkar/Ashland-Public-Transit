@@ -97,9 +97,14 @@ const RideSchema = new mongoose.Schema(
     },
     paymentMethod: {
       type: String,
-      enum: ["Cash", "Digital Pass", "Account"],
+      enum: ["Cash", "Digital Pass", "Account", "Stripe"],
       default: "Cash",
     },
+    stripeCheckoutSessionId: { type: String },
+    stripePaymentIntentId: { type: String },
+    paidAt: { type: Date },
+    paymentReceiptNumber: { type: String },
+    paymentReceiptUrl: { type: String },
 
     // 5. Dispatcher Control Logic
     // Enum aligned with all runtime values used across server routes, client, and mobile.
@@ -129,6 +134,18 @@ const RideSchema = new mongoose.Schema(
         action: String, // e.g. "Confirmed Ride"
         timestamp: { type: Date, default: Date.now },
         details: String,
+      },
+    ],
+    notifications: [
+      {
+        audience: {
+          type: String,
+          enum: ["Rider", "Dispatcher", "Driver", "System"],
+          default: "System",
+        },
+        message: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        read: { type: Boolean, default: false },
       },
     ],
 

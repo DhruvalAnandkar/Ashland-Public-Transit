@@ -12,7 +12,11 @@ import {
   User,
   UserCheck,
 } from "lucide-react";
-import { createRide, checkCapacity } from "../services/api";
+import {
+  createRide,
+  checkCapacity,
+  createRideCheckoutSession,
+} from "../services/api";
 import { calculateFare } from "../utils/fareCalculator";
 import { motion, AnimatePresence } from "framer-motion";
 import Toast from "./Toast";
@@ -51,6 +55,7 @@ const BookingForm = () => {
     isSameDay: false,
     passengers: 1,
     scheduledTime: "",
+    paymentMethod: "Cash",
   });
   const [price, setPrice] = useState(2.0);
   const [capacityStatus, setCapacityStatus] = useState(null);
@@ -127,6 +132,20 @@ const BookingForm = () => {
     setIsSubmitting(true);
     try {
       const response = await createRide({ ...formData, fare: price });
+
+      if (formData.paymentMethod === "Stripe") {
+        const checkout = await createRideCheckoutSession(response._id, {
+          source: "web",
+          successUrl: `${window.location.origin}/track?ticketId=${encodeURIComponent(response.ticketId)}&checkoutSessionId={CHECKOUT_SESSION_ID}`,
+          cancelUrl: `${window.location.origin}/track?ticketId=${encodeURIComponent(response.ticketId)}&paymentCancelled=true`,
+        });
+
+        if (checkout?.url) {
+          window.location.href = checkout.url;
+          return;
+        }
+      }
+
       navigate(`/track?ticketId=${encodeURIComponent(response.ticketId)}`);
       setFormData({
         passengerName: "",
@@ -137,6 +156,7 @@ const BookingForm = () => {
         isSameDay: false,
         passengers: 1,
         scheduledTime: "",
+        paymentMethod: "Cash",
       });
       setCapacityStatus(null);
       setIsFull(false);
@@ -163,419 +183,290 @@ const BookingForm = () => {
   };
 
   return (
-    <div className="max-w-md mx-auto py-8 px-4">
+    <div className="max-w-lg mx-auto py-8 px-4">
       <motion.div
         variants={cardVariants}
         initial="hidden"
         animate="visible"
-        className="bg-white/80 backdrop-blur-xl rounded-2xl shadow-[0_8px_40px_rgb(0,0,0,0.14)] p-6 border border-white/30 relative overflow-hidden"
+        className="bg-white/90 backdrop-blur-2xl rounded-[2rem] shadow-[0_8px_48px_rgb(0,0,0,0.10)] p-7 md:p-8 border border-white/40 relative overflow-hidden"
       >
         {/* DECORATIVE BLURS */}
-        <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -mr-12 -mt-12 pointer-events-none" />
-        <div className="absolute bottom-0 left-0 w-32 h-32 bg-emerald-500/8 rounded-full blur-3xl -ml-10 -mb-10 pointer-events-none" />
+        <div className="absolute top-0 right-0 w-48 h-48 bg-blue-500/8 rounded-full blur-3xl -mr-16 -mt-16 pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-36 h-36 bg-emerald-500/6 rounded-full blur-3xl -ml-12 -mb-12 pointer-events-none" />
 
         {/* HEADER */}
-        <motion.div
-          custom={0}
-          variants={fieldVariants}
-          initial="hidden"
-          animate="visible"
-          className="text-center mb-8 relative z-10"
-        >
+        <motion.div custom={0} variants={fieldVariants} initial="hidden" animate="visible" className="text-center mb-8 relative z-10">
           <motion.div
             whileHover={{ scale: 1.08, rotate: 3 }}
             transition={{ type: "spring", stiffness: 400, damping: 18 }}
-            className="w-16 h-16 bg-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white shadow-lg shadow-blue-500/30"
+            className="w-16 h-16 bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl flex items-center justify-center mx-auto mb-4 text-white shadow-lg shadow-blue-300/40"
           >
-            <MapPin size={32} />
+            <MapPin size={30} />
           </motion.div>
-          <h2 className="text-3xl font-black text-slate-800 tracking-tighter">
-            Book a Ride
-          </h2>
-          <p className="text-slate-500 font-medium text-sm mt-1">
-            Ashland City Transit • On-Demand
-          </p>
+          <h2 className="text-3xl font-black text-slate-800 tracking-tighter">Book a Ride</h2>
+          <p className="text-slate-400 font-bold text-xs mt-1.5 uppercase tracking-widest">Ashland City Transit • On-Demand</p>
         </motion.div>
 
         <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
-          {/* FIELD GROUP 1: Passenger Details */}
-          <motion.div
-            custom={1}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-            className="space-y-4"
-          >
-            <div className="relative group">
-              <User
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200"
-                size={20}
-              />
-              <input
-                type="text"
-                placeholder="Full Name"
-                required
-                className="w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-slate-50/80 font-bold text-sm text-slate-800 transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.passengerName}
-                onChange={(e) =>
-                  setFormData({ ...formData, passengerName: e.target.value })
-                }
-              />
-            </div>
-            <div className="relative group">
-              <Phone
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200"
-                size={20}
-              />
-              <input
-                type="text"
-                placeholder="Phone Number"
-                required
-                className="w-full pl-12 pr-4 py-4 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-slate-50/80 font-bold text-slate-800 transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.phoneNumber}
-                onChange={(e) =>
-                  setFormData({ ...formData, phoneNumber: e.target.value })
-                }
-              />
+
+          {/* ── STEP 1: PASSENGER INFO ─────────────────────────────── */}
+          <motion.div custom={1} variants={fieldVariants} initial="hidden" animate="visible">
+            <p className="text-[9px] font-black text-blue-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 bg-blue-600 text-white rounded-md flex items-center justify-center text-[9px] font-black">1</span>
+              Passenger Info
+            </p>
+            <div className="space-y-3">
+              <div className="relative group">
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors duration-200" size={18} />
+                <input
+                  type="text" placeholder="Full Name" required
+                  className="w-full pl-11 pr-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300"
+                  value={formData.passengerName}
+                  onChange={(e) => setFormData({ ...formData, passengerName: e.target.value })}
+                />
+              </div>
+              <div className="relative group">
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors duration-200" size={18} />
+                <input
+                  type="text" placeholder="Phone Number" required
+                  className="w-full pl-11 pr-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300"
+                  value={formData.phoneNumber}
+                  onChange={(e) => setFormData({ ...formData, phoneNumber: e.target.value })}
+                />
+              </div>
             </div>
           </motion.div>
 
-          {/* FIELD GROUP 2: Location */}
-          <motion.div
-            custom={2}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-            className="space-y-3 pt-2"
-          >
-            <div className="relative group">
-              <MapPin
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500 transition-colors"
-                size={20}
-              />
-              <input
-                type="text"
-                placeholder="Pickup Address"
-                required
-                className="w-full pl-12 pr-4 py-4 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-emerald-500/40 focus:border-emerald-400 bg-slate-50/80 font-bold text-slate-800 transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.pickup}
-                onChange={(e) =>
-                  setFormData({ ...formData, pickup: e.target.value })
-                }
-              />
-            </div>
-            <div className="relative group">
-              <input
-                type="text"
-                placeholder="Pickup Details (e.g. Wearing Red Hat)"
-                className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-slate-400/40 focus:border-slate-400 bg-slate-50/80 text-sm font-medium transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.pickupDetails || ""}
-                onChange={(e) =>
-                  setFormData({ ...formData, pickupDetails: e.target.value })
-                }
-              />
-            </div>
-            <div className="relative group">
-              <MapPin
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-red-500 transition-colors"
-                size={20}
-              />
-              <input
-                type="text"
-                placeholder="Drop-off Address"
-                required
-                className="w-full pl-12 pr-4 py-4 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-red-500/40 focus:border-red-400 bg-slate-50/80 font-bold text-slate-800 transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.dropoff}
-                onChange={(e) =>
-                  setFormData({ ...formData, dropoff: e.target.value })
-                }
-              />
+          {/* ── STEP 2: ROUTE ──────────────────────────────────────── */}
+          <motion.div custom={2} variants={fieldVariants} initial="hidden" animate="visible">
+            <p className="text-[9px] font-black text-emerald-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 bg-emerald-600 text-white rounded-md flex items-center justify-center text-[9px] font-black">2</span>
+              Trip Route
+            </p>
+            <div className="flex gap-3">
+              {/* Route connector dots */}
+              <div className="flex flex-col items-center pt-4 shrink-0">
+                <div className="w-3 h-3 rounded-full bg-emerald-400 border-2 border-emerald-200 shadow-sm" />
+                <div className="w-0.5 flex-1 bg-slate-200 my-1 min-h-[100px]" />
+                <div className="w-3 h-3 rounded-full bg-red-400 border-2 border-red-200 shadow-sm" />
+              </div>
+              <div className="flex-1 space-y-3">
+                <div className="relative group">
+                  <input
+                    type="text" placeholder="Pickup Address" required
+                    className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300"
+                    value={formData.pickup}
+                    onChange={(e) => setFormData({ ...formData, pickup: e.target.value })}
+                  />
+                </div>
+                <div className="relative group">
+                  <input
+                    type="text" placeholder="Pickup Details (e.g. Wearing Red Hat)"
+                    className="w-full px-4 py-2.5 border border-slate-100 rounded-xl outline-none focus:ring-2 focus:ring-slate-300/40 bg-slate-50/40 text-xs font-medium text-slate-500 transition-all hover:border-slate-200"
+                    value={formData.pickupDetails || ""}
+                    onChange={(e) => setFormData({ ...formData, pickupDetails: e.target.value })}
+                  />
+                </div>
+                <div className="relative group">
+                  <input
+                    type="text" placeholder="Drop-off Address" required
+                    className="w-full px-4 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-red-500/30 focus:border-red-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300"
+                    value={formData.dropoff}
+                    onChange={(e) => setFormData({ ...formData, dropoff: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
           </motion.div>
 
-          {/* FIELD GROUP 3: Time & Passengers */}
-          <motion.div
-            custom={3}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-2 gap-4 pt-2"
-          >
-            <div className="relative group">
-              <Clock
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200"
-                size={20}
-              />
-              <input
-                type="datetime-local"
-                required
-                className="w-full pl-12 pr-4 py-3 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-slate-50/80 font-bold text-slate-800 text-xs transition-all duration-200 shadow-sm appearance-none hover:border-slate-300"
-                value={formData.scheduledTime}
-                onChange={handleDateChange}
-              />
+          {/* ── STEP 3: SCHEDULE ───────────────────────────────────── */}
+          <motion.div custom={3} variants={fieldVariants} initial="hidden" animate="visible">
+            <p className="text-[9px] font-black text-amber-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 bg-amber-500 text-white rounded-md flex items-center justify-center text-[9px] font-black">3</span>
+              Schedule
+            </p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="col-span-2 relative group">
+                <Clock className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-amber-500 transition-colors" size={16} />
+                <input
+                  type="datetime-local" required
+                  className="w-full pl-10 pr-3 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300 appearance-none"
+                  value={formData.scheduledTime}
+                  onChange={handleDateChange}
+                />
+              </div>
+              <div className="relative group">
+                <UserCheck className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-300 group-focus-within:text-blue-500 transition-colors" size={16} />
+                <input
+                  type="number" min="1" max="10" placeholder="Pax" required
+                  className="w-full pl-10 pr-2 py-3.5 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 bg-slate-50/60 font-bold text-sm text-slate-800 transition-all shadow-sm hover:border-slate-300"
+                  value={formData.passengers}
+                  onChange={(e) => setFormData({ ...formData, passengers: parseInt(e.target.value) })}
+                />
+              </div>
             </div>
-            <div className="relative group">
-              <UserCheck
-                className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors duration-200"
-                size={20}
-              />
-              <input
-                type="number"
-                min="1"
-                max="10"
-                placeholder="Pax"
-                required
-                className="w-full pl-12 pr-4 py-4 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-400 bg-slate-50/80 font-bold text-slate-800 transition-all duration-200 shadow-sm hover:border-slate-300"
-                value={formData.passengers}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    passengers: parseInt(e.target.value),
-                  })
-                }
-              />
+
+            {/* Capacity Status */}
+            <div className="mt-3">
+              <AnimatePresence mode="wait">
+                {checking ? (
+                  <motion.p key="checking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="text-[10px] text-blue-500 font-bold animate-pulse ml-1 uppercase tracking-wider">
+                    Checking Fleet Availability...
+                  </motion.p>
+                ) : isPast ? (
+                  <motion.div key="past" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="p-3 bg-red-500 rounded-xl flex items-center gap-2.5 text-white shadow-md">
+                    <Calendar size={16} />
+                    <div>
+                      <p className="text-[10px] font-black uppercase">Invalid Time</p>
+                      <p className="text-[9px] opacity-80">Cannot book rides in the past.</p>
+                    </div>
+                  </motion.div>
+                ) : isFull ? (
+                  <motion.div key="full" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="p-3 bg-red-500 rounded-xl flex items-center gap-2.5 text-white shadow-md">
+                    <XCircle size={16} />
+                    <div>
+                      <p className="text-[10px] font-black uppercase">Fleet Fully Booked</p>
+                      <p className="text-[9px] opacity-80">Try a different time slot.</p>
+                    </div>
+                  </motion.div>
+                ) : capacityStatus === "Busy" ? (
+                  <motion.div key="busy" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-2 text-amber-700">
+                    <AlertTriangle size={14} />
+                    <p className="text-[10px] font-bold uppercase">High Demand Window</p>
+                  </motion.div>
+                ) : formData.scheduledTime ? (
+                  <motion.div key="clear" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700">
+                    <CheckCircle2 size={14} />
+                    <p className="text-[10px] font-bold uppercase">Slots Available</p>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
             </div>
           </motion.div>
 
-          {/* FIELD GROUP 4: Capacity Status */}
-          <motion.div
-            custom={4}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <AnimatePresence mode="wait">
-              {checking ? (
-                <motion.p
-                  key="checking"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="text-[10px] text-blue-500 font-bold animate-pulse ml-2 uppercase"
-                >
-                  Checking Fleet Availability...
-                </motion.p>
-              ) : isPast ? (
-                <motion.div
-                  key="past"
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="p-4 bg-red-600 rounded-2xl flex items-center gap-3 text-white shadow-lg shadow-red-100"
-                >
-                  <Calendar size={20} />
-                  <div>
-                    <p className="text-xs font-black uppercase">Invalid Time</p>
-                    <p className="text-[9px] opacity-90 leading-tight text-white">
-                      Cannot book rides in the past. Please select a future
-                      time.
-                    </p>
-                  </div>
-                </motion.div>
-              ) : isFull ? (
-                <motion.div
-                  key="full"
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="p-4 bg-red-600 rounded-2xl flex items-center gap-3 text-white shadow-lg shadow-red-100"
-                >
-                  <XCircle size={20} />
-                  <div>
-                    <p className="text-xs font-black uppercase">
-                      Fleet Fully Booked
-                    </p>
-                    <p className="text-[9px] opacity-90 leading-tight text-white">
-                      All 7 vehicles are currently dispatched. Try a different
-                      time slot.
-                    </p>
-                  </div>
-                </motion.div>
-              ) : capacityStatus === "Busy" ? (
-                <motion.div
-                  key="busy"
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="p-3 bg-amber-100 border border-amber-200 rounded-2xl flex items-center gap-2 text-amber-800"
-                >
-                  <AlertTriangle size={16} />
-                  <p className="text-[10px] font-bold uppercase">
-                    High Demand Window
-                  </p>
-                </motion.div>
-              ) : formData.scheduledTime ? (
-                <motion.div
-                  key="clear"
-                  initial={{ opacity: 0, y: -8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  className="p-3 bg-emerald-100 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-800"
-                >
-                  <CheckCircle2 size={16} />
-                  <p className="text-[10px] font-bold uppercase">
-                    Slots Available
-                  </p>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </motion.div>
-
-          {/* FIELD GROUP 5: User Type */}
-          <motion.div
-            custom={5}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-          >
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2 block">
+          {/* ── STEP 4: PASSENGER TYPE & GROUP ────────────────────── */}
+          <motion.div custom={4} variants={fieldVariants} initial="hidden" animate="visible">
+            <p className="text-[9px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 bg-indigo-600 text-white rounded-md flex items-center justify-center text-[9px] font-black">4</span>
               Passenger Type
-            </label>
-            <div className="grid grid-cols-2 gap-2">
+            </p>
+            <div className="grid grid-cols-3 gap-2 mb-4">
               {[
-                "Standard",
-                "Senior",
-                "Student",
-                "Veteran",
-                "Elderly/Disabled",
-                "Child",
-              ].map((type) => (
+                { type: "Standard", icon: "👤" },
+                { type: "Senior", icon: "👴" },
+                { type: "Student", icon: "🎓" },
+                { type: "Veteran", icon: "🎖️" },
+                { type: "Elderly/Disabled", icon: "♿" },
+                { type: "Child", icon: "👶" },
+              ].map(({ type, icon }) => (
                 <motion.button
-                  key={type}
-                  type="button"
-                  whileHover={{ scale: 1.02 }}
+                  key={type} type="button"
+                  whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.96 }}
                   onClick={() => setFormData({ ...formData, userType: type })}
-                  className={`py-2 px-1 text-[10px] font-black rounded-xl transition-all border ${
-                    formData.userType === type
-                      ? "bg-blue-600 text-white border-blue-600 shadow-md"
-                      : "bg-white/60 text-slate-500 border-slate-200 hover:border-blue-300"
-                  }`}
+                  className={`py-2.5 px-2 rounded-xl transition-all border flex flex-col items-center gap-1 ${formData.userType === type
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200/50"
+                      : "bg-white/70 text-slate-500 border-slate-200 hover:border-blue-300 hover:bg-blue-50/50"
+                    }`}
                 >
-                  {type}
+                  <span className="text-base">{icon}</span>
+                  <span className="text-[9px] font-black uppercase tracking-wider leading-none">{type}</span>
                 </motion.button>
               ))}
             </div>
-          </motion.div>
 
-          {/* FIELD GROUP 6: Passenger Adjuster */}
-          <motion.div
-            custom={6}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-            className="flex items-center justify-between p-3 border-2 border-slate-100 rounded-2xl bg-white/60 backdrop-blur-sm"
-          >
-            <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
-              <Users size={16} /> Group size
-            </div>
-            <div className="flex items-center gap-4">
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.88 }}
-                onClick={() =>
-                  setFormData({
-                    ...formData,
-                    passengers: Math.max(1, formData.passengers - 1),
-                  })
-                }
-                className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center font-black text-blue-600 hover:bg-blue-50 transition-colors"
-              >
-                -
-              </motion.button>
-              <span className="font-black text-sm w-4 text-center">
-                {formData.passengers}
-              </span>
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.88 }}
-                onClick={() =>
-                  setFormData({
-                    ...formData,
-                    passengers: formData.passengers + 1,
-                  })
-                }
-                className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center font-black text-blue-600 hover:bg-blue-50 transition-colors"
-              >
-                +
-              </motion.button>
+            {/* Group Size Adjuster */}
+            <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-100 rounded-xl">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-500">
+                <Users size={15} className="text-slate-400" /> Group Size
+              </div>
+              <div className="flex items-center gap-3">
+                <motion.button
+                  type="button" whileTap={{ scale: 0.85 }}
+                  onClick={() => setFormData({ ...formData, passengers: Math.max(1, formData.passengers - 1) })}
+                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-black text-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                >−</motion.button>
+                <span className="font-black text-base w-5 text-center text-slate-800">{formData.passengers}</span>
+                <motion.button
+                  type="button" whileTap={{ scale: 0.85 }}
+                  onClick={() => setFormData({ ...formData, passengers: formData.passengers + 1 })}
+                  className="w-8 h-8 rounded-lg bg-white border border-slate-200 flex items-center justify-center font-black text-blue-600 hover:bg-blue-50 transition-colors shadow-sm"
+                >+</motion.button>
+              </div>
             </div>
           </motion.div>
 
-          {/* FIELD GROUP 7: Fare Display */}
-          <motion.div
-            custom={7}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-            className="p-4 bg-blue-950 rounded-[1.5rem] flex justify-between items-center text-white shadow-xl"
+          {/* ── FARE DISPLAY ──────────────────────────────────────── */}
+          <motion.div custom={5} variants={fieldVariants} initial="hidden" animate="visible"
+            className="p-5 bg-gradient-to-br from-slate-900 to-slate-800 rounded-2xl flex justify-between items-center text-white shadow-xl relative overflow-hidden"
           >
-            <span className="text-[10px] font-black opacity-50 uppercase tracking-widest">
-              Est. Total Fare
-            </span>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(59,130,246,0.15),_transparent_50%)] pointer-events-none" />
+            <div className="relative z-10">
+              <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 block mb-0.5">Estimated Total</span>
+              <span className="text-[10px] font-bold text-blue-400">{formData.passengers} pax · {formData.userType}</span>
+            </div>
             <motion.span
               key={price}
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
+              initial={{ opacity: 0, scale: 0.8, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ type: "spring", stiffness: 400, damping: 20 }}
-              className="text-2xl font-black tracking-tighter"
+              className="text-3xl font-black tracking-tighter relative z-10"
             >
               ${price.toFixed(2)}
             </motion.span>
           </motion.div>
 
-          {/* SUBMIT BUTTON with SHIMMER */}
-          <motion.div
-            custom={8}
-            variants={fieldVariants}
-            initial="hidden"
-            animate="visible"
-          >
+          {/* ── PAYMENT METHOD ────────────────────────────────────── */}
+          <motion.div custom={6} variants={fieldVariants} initial="hidden" animate="visible">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+              <span className="w-5 h-5 bg-slate-700 text-white rounded-md flex items-center justify-center text-[9px] font-black">5</span>
+              Payment
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { method: "Cash", label: "Pay Cash", icon: "💵" },
+                { method: "Stripe", label: "Card (Stripe)", icon: "💳" },
+              ].map(({ method, label, icon }) => (
+                <motion.button
+                  key={method} type="button"
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => setFormData({ ...formData, paymentMethod: method })}
+                  className={`py-3.5 px-3 rounded-xl transition-all border flex items-center justify-center gap-2 ${formData.paymentMethod === method
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200/40"
+                      : "bg-white/70 text-slate-600 border-slate-200 hover:border-blue-300"
+                    }`}
+                >
+                  <span className="text-base">{icon}</span>
+                  <span className="text-[11px] font-black uppercase tracking-wider">{label}</span>
+                </motion.button>
+              ))}
+            </div>
+          </motion.div>
+
+          {/* ── SUBMIT BUTTON ─────────────────────────────────────── */}
+          <motion.div custom={7} variants={fieldVariants} initial="hidden" animate="visible">
             <motion.button
               type="submit"
               disabled={isFull || checking || isPast || isSubmitting}
-              whileHover={
-                !(isFull || isPast || isSubmitting) ? { scale: 1.02 } : {}
-              }
-              whileTap={
-                !(isFull || isPast || isSubmitting) ? { scale: 0.97 } : {}
-              }
-              className={`relative overflow-hidden group w-full py-4 rounded-[1.5rem] font-black text-sm tracking-widest uppercase shadow-xl transition-colors
-                                ${
-                                  isFull || isPast || isSubmitting
-                                    ? "bg-slate-300 text-slate-500 cursor-not-allowed shadow-none"
-                                    : "bg-blue-600 text-white hover:bg-blue-700"
-                                }`}
+              whileHover={!(isFull || isPast || isSubmitting) ? { scale: 1.02 } : {}}
+              whileTap={!(isFull || isPast || isSubmitting) ? { scale: 0.97 } : {}}
+              className={`relative overflow-hidden group w-full py-4 rounded-2xl font-black text-sm tracking-widest uppercase shadow-xl transition-all ${isFull || isPast || isSubmitting
+                  ? "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
+                  : "bg-gradient-to-r from-blue-600 to-blue-500 text-white hover:shadow-blue-200/50"
+                }`}
             >
-              {/* SHIMMER SWEEP — only when button is active */}
               {!(isFull || isPast || isSubmitting) && (
-                <span
-                  className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/20 to-transparent"
-                  aria-hidden="true"
-                />
+                <span className="pointer-events-none absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 ease-in-out bg-gradient-to-r from-transparent via-white/15 to-transparent" aria-hidden="true" />
               )}
-              {isFull || isPast
-                ? "Unavailable"
-                : checking
-                  ? "Verifying..."
-                  : isSubmitting
-                    ? "Booking..."
-                    : "Confirm Booking"}
+              {isFull || isPast ? "Unavailable" : checking ? "Verifying..." : isSubmitting ? "Booking..." : formData.paymentMethod === "Stripe" ? "Continue to Payment" : "Confirm Booking"}
             </motion.button>
           </motion.div>
         </form>
       </motion.div>
 
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.9, duration: 0.5 }}
-        className="text-center mt-6"
-      >
-        <Link
-          to="/track"
-          className="text-xs font-bold text-slate-400 hover:text-blue-500 transition-colors uppercase tracking-widest"
-        >
+      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.9, duration: 0.5 }} className="text-center mt-6">
+        <Link to="/track" className="text-xs font-bold text-slate-400 hover:text-blue-500 transition-colors uppercase tracking-widest">
           Already have a ticket? Track it here
         </Link>
       </motion.div>
@@ -584,12 +475,7 @@ const BookingForm = () => {
       <div className="fixed top-4 right-4 z-[110] flex flex-col items-end">
         <AnimatePresence>
           {toasts.map((toast) => (
-            <Toast
-              key={toast.id}
-              message={toast.message}
-              type={toast.type}
-              onClose={() => removeToast(toast.id)}
-            />
+            <Toast key={toast.id} message={toast.message} type={toast.type} onClose={() => removeToast(toast.id)} />
           ))}
         </AnimatePresence>
       </div>

@@ -5,20 +5,47 @@ import {
     ActivityIndicator, Platform, ToastAndroid,
     Dimensions,
 } from 'react-native';
+import api from '../services/api';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { createRide } from '../services/api';
+import { createRide, createRideCheckoutSession, verifyRideCheckoutSession } from '../services/api';
 import PlacesInput from '../components/PlacesInput';
 import * as SecureStore from 'expo-secure-store';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import Animated, {
+    FadeInDown, FadeIn,
+    useSharedValue, useAnimatedStyle, withSpring,
+    withSequence,
+} from 'react-native-reanimated';
 
 const { width, height } = Dimensions.get('window');
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
+const EDGE = 20;
+
 const ASHLAND_REGION = {
     latitude: 40.8688, longitude: -82.3179,
     latitudeDelta: 0.05, longitudeDelta: 0.05,
 };
 
-const STEPS = ['Route', 'Details', 'Confirm'];
+/* Fresh unique icons — never used by other screens */
+const STEPS = [
+    { label: 'Route', icon: '🗺️', doneIcon: '✦' },
+    { label: 'Details', icon: '🎛️', doneIcon: '✦' },
+    { label: 'Confirm', icon: '🛡️', doneIcon: '✦' },
+];
+
+const USER_TYPES = [
+    { key: 'General', label: 'Standard', icon: '🧑‍💼' },
+    { key: 'Senior', label: 'Senior', icon: '🏛️' },
+    { key: 'Student', label: 'Student', icon: '📐' },
+    { key: 'Veteran', label: 'Veteran', icon: '⭐' },
+    { key: 'Elderly/Disabled', label: 'Elderly', icon: '🤝' },
+    { key: 'Child', label: 'Child', icon: '🧒' },
+];
 
 const showToast = (msg) => {
     if (Platform.OS === 'android') {
@@ -29,17 +56,44 @@ const showToast = (msg) => {
 };
 
 const isValidCoord = (lat, lng) =>
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180;
+    Number.isFinite(lat) && Number.isFinite(lng) &&
+    lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180;
 
+/* ─── ANIMATED BUTTON ─────────────────────────────────────────── */
+const PressableButton = ({ children, onPress, style, colors }) => {
+    const scale = useSharedValue(1);
+    const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+    const handlePress = () => {
+        scale.value = withSequence(
+            withSpring(0.95, { damping: 12, stiffness: 400 }),
+            withSpring(1, { damping: 8, stiffness: 300 })
+        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onPress?.();
+    };
+    return (
+        <AnimatedTouchable style={[scaleStyle, style]} onPress={handlePress} activeOpacity={1}>
+            {colors ? (
+                <LinearGradient colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={[styles.gradientInner, style]}>
+                    {children}
+                </LinearGradient>
+            ) : children}
+        </AnimatedTouchable>
+    );
+};
+
+/* ═══════════════════════════════════════════════════════════════════
+   MAIN BOOKING SCREEN
+   ═══════════════════════════════════════════════════════════════════ */
 const RiderBookingScreen = ({ navigation, route }) => {
     const scheduledMode = route?.params?.scheduledMode || false;
+    const mountedRef = useRef(true);
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => { mountedRef.current = false; };
+    }, []);
 
-    const [step, setStep] = useState(0); // 0=Route, 1=Details, 2=Confirm
+    const [step, setStep] = useState(0);
     const [pickup, setPickup] = useState(null);
     const [dropoff, setDropoff] = useState(null);
     const [passengerCount, setPassengerCount] = useState(1);
@@ -50,18 +104,16 @@ const RiderBookingScreen = ({ navigation, route }) => {
     const [isSameDay, setIsSameDay] = useState(!scheduledMode);
     const [isOutOfTown, setIsOutOfTown] = useState(false);
     const [mileage, setMileage] = useState(5);
+    const [paymentMethod, setPaymentMethod] = useState('Cash');
     const [loading, setLoading] = useState(false);
     const [user, setUser] = useState(null);
-    const [selectingMode, setSelectingMode] = useState(null); // 'pickup' or 'dropoff' when selecting from map
+    const [selectingMode, setSelectingMode] = useState(null);
     const mapRef = useRef(null);
-    const pickupCoord =
-        pickup && isValidCoord(pickup.latitude, pickup.longitude)
-            ? { latitude: pickup.latitude, longitude: pickup.longitude }
-            : null;
-    const dropoffCoord =
-        dropoff && isValidCoord(dropoff.latitude, dropoff.longitude)
-            ? { latitude: dropoff.latitude, longitude: dropoff.longitude }
-            : null;
+
+    const pickupCoord = pickup && isValidCoord(pickup.latitude, pickup.longitude)
+        ? { latitude: pickup.latitude, longitude: pickup.longitude } : null;
+    const dropoffCoord = dropoff && isValidCoord(dropoff.latitude, dropoff.longitude)
+        ? { latitude: dropoff.latitude, longitude: dropoff.longitude } : null;
 
     useEffect(() => {
         SecureStore.getItemAsync('user').then(str => {
@@ -70,16 +122,12 @@ const RiderBookingScreen = ({ navigation, route }) => {
     }, []);
 
     useEffect(() => {
-        if (
-            pickup &&
-            dropoff &&
-            mapRef.current &&
+        if (pickup && dropoff && mapRef.current &&
             isValidCoord(pickup.latitude, pickup.longitude) &&
-            isValidCoord(dropoff.latitude, dropoff.longitude)
-        ) {
+            isValidCoord(dropoff.latitude, dropoff.longitude)) {
             mapRef.current.fitToCoordinates(
                 [{ latitude: pickup.latitude, longitude: pickup.longitude },
-                 { latitude: dropoff.latitude, longitude: dropoff.longitude }],
+                { latitude: dropoff.latitude, longitude: dropoff.longitude }],
                 { edgePadding: { top: 60, right: 60, bottom: 60, left: 60 }, animated: true }
             );
         }
@@ -89,109 +137,59 @@ const RiderBookingScreen = ({ navigation, route }) => {
         if (!place) return null;
         const latitude = Number(place.latitude);
         const longitude = Number(place.longitude);
-        if (!isValidCoord(latitude, longitude)) {
-            return null;
-        }
-        return {
-            ...place,
-            latitude,
-            longitude,
-        };
+        if (!isValidCoord(latitude, longitude)) return null;
+        return { ...place, latitude, longitude };
     };
 
     const handleSelectPickup = (place) => {
         const sanitized = sanitizePlace(place);
-        if (!sanitized) {
-            showToast('Invalid pickup coordinates. Please pick another location.');
-            return;
-        }
+        if (!sanitized) { showToast('Invalid pickup coordinates.'); return; }
         setPickup(sanitized);
     };
 
     const handleSelectDropoff = (place) => {
         const sanitized = sanitizePlace(place);
-        if (!sanitized) {
-            showToast('Invalid drop-off coordinates. Please pick another location.');
-            return;
-        }
+        if (!sanitized) { showToast('Invalid drop-off coordinates.'); return; }
         setDropoff(sanitized);
     };
 
     const handleMapPress = (e) => {
         if (!selectingMode) return;
-        
         const { latitude, longitude } = e.nativeEvent.coordinate;
         const locationName = `Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`;
-        
-        const location = {
-            name: locationName,
-            latitude,
-            longitude,
-        };
-
-        if (selectingMode === 'pickup') {
-            setPickup(location);
-        } else if (selectingMode === 'dropoff') {
-            setDropoff(location);
-        }
+        const location = { name: locationName, latitude, longitude };
+        if (selectingMode === 'pickup') setPickup(location);
+        else if (selectingMode === 'dropoff') setDropoff(location);
         setSelectingMode(null);
         showToast(`${selectingMode === 'pickup' ? 'Pickup' : 'Dropoff'} location set!`);
     };
 
     const estimateFare = () => {
-        // Match server fareCalculator.js logic exactly
         const RATES = {
-            'General': 2.00,
-            'Standard': 2.00,
-            'Senior': 1.00,
-            'Student': 1.50,
-            'Veteran': 0.00,
-            'Elderly/Disabled': 1.00,
-            'Child': 1.00,
+            'General': 2.00, 'Standard': 2.00, 'Senior': 1.00,
+            'Student': 1.50, 'Veteran': 0.00, 'Elderly/Disabled': 1.00, 'Child': 1.00,
         };
-        
         let baseFare = RATES[userType] || 2.00;
-        
-        // Same Day booking adds $1.00 surcharge for Standard/General/Student
-        if (isSameDay && (['General', 'Standard', 'Student'].includes(userType))) {
-            baseFare += 1.00;
-        }
-        
-        // Multi-passenger logic (second person pays half-price if not free)
+        if (isSameDay && (['General', 'Standard', 'Student'].includes(userType))) baseFare += 1.00;
         let total = baseFare;
         if (passengerCount > 1 && baseFare > 0) {
-            const discountedRiders = passengerCount - 1;
-            total += (baseFare / 2) * discountedRiders;
+            total += (baseFare / 2) * (passengerCount - 1);
         }
-        
-        // Out of town: $2.50 per mile
-        if (isOutOfTown && mileage > 0) {
-            total += (mileage * 2.50);
-        }
-        
+        if (isOutOfTown && mileage > 0) total += (mileage * 2.50);
         return total.toFixed(2);
     };
 
     const goBack = () => {
-        if (step === 0) {
-            navigation ? navigation.goBack() : null;
-        } else {
-            setStep(s => s - 1);
-        }
+        if (step === 0) { navigation?.goBack(); }
+        else { setStep(s => s - 1); }
     };
 
     const goNext = () => {
         if (step === 0) {
             if (!pickup) { showToast('Please select a pickup location.'); return; }
             if (!dropoff) { showToast('Please select a drop-off location.'); return; }
-            if (!isValidCoord(pickup.latitude, pickup.longitude)) {
-                showToast('Pickup location is invalid. Please reselect.');
-                return;
-            }
-            if (!isValidCoord(dropoff.latitude, dropoff.longitude)) {
-                showToast('Drop-off location is invalid. Please reselect.');
-                return;
-            }
+            if (!isValidCoord(pickup.latitude, pickup.longitude)) { showToast('Pickup invalid.'); return; }
+            if (!isValidCoord(dropoff.latitude, dropoff.longitude)) { showToast('Drop-off invalid.'); return; }
             setStep(1);
         } else if (step === 1) {
             setStep(2);
@@ -201,259 +199,343 @@ const RiderBookingScreen = ({ navigation, route }) => {
     const handleConfirm = async () => {
         setLoading(true);
         try {
+            const now = new Date();
+            const minFutureTime = new Date(now.getTime() + 2 * 60 * 1000);
+            const finalScheduledTime = scheduledDate < minFutureTime ? minFutureTime : scheduledDate;
+
             const rideData = {
                 passengerName: user?.username || 'Mobile Rider',
                 phoneNumber: user?.phoneNumber || '000-0000',
                 pickup: pickup?.name || 'Unknown',
-                pickupCoordinates: pickup
-                    ? { type: 'Point', coordinates: [pickup.longitude, pickup.latitude] }
-                    : undefined,
+                pickupCoordinates: pickup ? { type: 'Point', coordinates: [pickup.longitude, pickup.latitude] } : undefined,
                 dropoff: dropoff?.name || 'Unknown',
-                dropoffCoordinates: dropoff
-                    ? { type: 'Point', coordinates: [dropoff.longitude, dropoff.latitude] }
-                    : undefined,
-                userType,
-                isSameDay,
-                passengers: passengerCount,
-                isOutOfTown,
-                mileage,
-                scheduledTime: scheduledDate.toISOString(),
+                dropoffCoordinates: dropoff ? { type: 'Point', coordinates: [dropoff.longitude, dropoff.latitude] } : undefined,
+                userType, isSameDay, passengers: passengerCount,
+                isOutOfTown, mileage,
+                scheduledTime: finalScheduledTime.toISOString(),
                 riderId: user?._id || user?.id,
+                paymentMethod,
             };
             const newRide = await createRide(rideData);
-            showToast('Ride booked! Ticket: ' + newRide.ticketId);
-            if (navigation) {
-                navigation.replace('RiderTrackingScreen', { ride: newRide });
+
+            if (paymentMethod === 'Stripe') {
+                const ticketEnc = encodeURIComponent(newRide.ticketId);
+                const expoBase = Linking.createURL('/').split('?')[0].split('#')[0];
+                const apiBase = api.defaults.baseURL || '';
+                const httpOrigin = apiBase.replace(/\/api\/?$/i, '');
+                if (!/^https?:\/\//i.test(httpOrigin)) {
+                    showToast('Stripe return needs your API on http(s)://…');
+                    return;
+                }
+                const bridgePath = '/api/rides/payments/expo-return';
+                const bridgePrefix = `${httpOrigin}${bridgePath}`;
+                const successUrl = `${bridgePrefix}?expo=${encodeURIComponent(expoBase)}&ticketId=${ticketEnc}&session_id={CHECKOUT_SESSION_ID}`;
+                const cancelUrl = `${bridgePrefix}?expo=${encodeURIComponent(expoBase)}&ticketId=${ticketEnc}&status=cancel`;
+                const checkout = await createRideCheckoutSession(newRide._id, { source: 'mobile', successUrl, cancelUrl });
+                if (checkout?.url) {
+                    try {
+                        const authResult = await WebBrowser.openAuthSessionAsync(checkout.url, bridgePrefix, { createTask: false });
+                        if (authResult.type === 'success' && authResult.url) {
+                            const parsed = Linking.parse(authResult.url);
+                            const rawStatus = parsed.queryParams?.status;
+                            const rawSession = parsed.queryParams?.session_id;
+                            const status = Array.isArray(rawStatus) ? rawStatus[0] : rawStatus;
+                            const sessionId = Array.isArray(rawSession) ? rawSession[0] : rawSession;
+                            const sidOk = sessionId && sessionId !== '{CHECKOUT_SESSION_ID}';
+                            if (status === 'cancel') { showToast('Payment was cancelled.'); }
+                            else if (sidOk && status !== 'cancel') {
+                                try { await verifyRideCheckoutSession(sessionId, newRide.ticketId); } catch { }
+                            }
+                        }
+                    } catch { showToast('Payment window closed — checking ride status…'); }
+
+                    let rideToShow = newRide;
+                    for (let attempt = 0; attempt < 45 && mountedRef.current; attempt++) {
+                        try {
+                            const { data } = await api.get(`/rides/${newRide._id}`);
+                            rideToShow = data;
+                            if (data?.paymentStatus === 'Paid') break;
+                        } catch { break; }
+                        await new Promise((r) => setTimeout(r, 1000));
+                    }
+                    if (mountedRef.current && navigation) navigation.replace('RiderTrackingScreen', { ride: rideToShow });
+                } else if (checkout?.mockPaid) {
+                    showToast('Payment successful (test mode)!');
+                    try {
+                        const freshRes = await api.get(`/rides/${newRide._id}`);
+                        if (navigation) navigation.replace('RiderTrackingScreen', { ride: freshRes.data || newRide });
+                    } catch {
+                        if (navigation) navigation.replace('RiderTrackingScreen', { ride: newRide });
+                    }
+                }
+                return;
             }
+
+            showToast('Ride booked! Ticket: ' + newRide.ticketId);
+            if (navigation) navigation.replace('RiderTrackingScreen', { ride: newRide });
         } catch (err) {
             const msg = err?.response?.data?.message || err.message || 'Booking failed.';
             showToast('Error: ' + msg);
-        } finally {
-            setLoading(false);
-        }
+        } finally { setLoading(false); }
     };
 
+    /* ─── RENDER ────────────────────────────────────────────────── */
     return (
         <SafeAreaView style={styles.safe}>
-            {/* Header */}
-            <View style={styles.header}>
+            {/* ══ HEADER ════════════════════════════════════════════ */}
+            <LinearGradient
+                colors={['#1e3a8a', '#1e40af', '#2563eb']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                style={styles.header}
+            >
                 <TouchableOpacity style={styles.backBtn} onPress={goBack}>
-                    <Text style={styles.backArrow}>←</Text>
+                    <Text style={styles.backArrow}>‹</Text>
                 </TouchableOpacity>
                 <Text style={styles.headerTitle}>Book a Ride</Text>
-                <View style={{ width: 40 }} />
-            </View>
+                <View style={styles.headerSpacer} />
+            </LinearGradient>
 
-            {/* Step indicators */}
-            <View style={styles.stepRow}>
-                {STEPS.map((label, i) => (
-                    <React.Fragment key={label}>
-                        <View style={styles.stepItem}>
-                            <View style={[styles.stepCircle, i <= step && styles.stepCircleActive]}>
-                                <Text style={[styles.stepNum, i <= step && styles.stepNumActive]}>
-                                    {i < step ? '✓' : i + 1}
-                                </Text>
-                            </View>
-                            <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>
-                                {label}
-                            </Text>
-                        </View>
-                        {i < STEPS.length - 1 && (
-                            <View style={[styles.stepConnector, i < step && styles.stepConnectorActive]} />
-                        )}
-                    </React.Fragment>
-                ))}
-            </View>
+            {/* ══ STEP INDICATOR ═════════════════════════════════════ */}
+            <Animated.View entering={FadeInDown.delay(80).springify()}>
+                <View style={styles.stepBar}>
+                    {STEPS.map((s, i) => {
+                        const isDone = i < step;
+                        const isActive = i === step;
+                        return (
+                            <React.Fragment key={s.label}>
+                                {/* Connector line BEFORE step (except first) */}
+                                {i > 0 && (
+                                    <View style={[styles.stepLine, isDone && styles.stepLineDone]} />
+                                )}
+                                <TouchableOpacity
+                                    style={styles.stepItem}
+                                    onPress={() => { if (i < step) setStep(i); }}
+                                    activeOpacity={0.7}
+                                >
+                                    <View style={[
+                                        styles.stepCircle,
+                                        isActive && styles.stepCircleActive,
+                                        isDone && styles.stepCircleDone,
+                                    ]}>
+                                        {isDone ? (
+                                            <Text style={styles.stepDoneIcon}>✦</Text>
+                                        ) : (
+                                            <Text style={[styles.stepIcon, isActive && styles.stepIconActive]}>
+                                                {s.icon}
+                                            </Text>
+                                        )}
+                                    </View>
+                                    <Text style={[
+                                        styles.stepLabel,
+                                        isActive && styles.stepLabelActive,
+                                        isDone && styles.stepLabelDone,
+                                    ]}>
+                                        {s.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            </React.Fragment>
+                        );
+                    })}
+                </View>
+            </Animated.View>
 
-            <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent} keyboardShouldPersistTaps="handled">
-                {/* ─── STEP 0: ROUTE ─── */}
+            {/* ══ SCROLLABLE BODY ═══════════════════════════════════ */}
+            <ScrollView
+                style={styles.body}
+                contentContainerStyle={styles.bodyContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
+                {/* ═══ STEP 0 — ROUTE ═══════════════════════════════ */}
                 {step === 0 && (
-                    <View>
+                    <Animated.View entering={FadeInDown.delay(120).springify()}>
                         {/* Map */}
                         <View style={styles.mapContainer}>
                             <MapView
                                 ref={mapRef}
                                 provider={PROVIDER_GOOGLE}
-                                style={{ width: '100%', height: '100%' }}
+                                style={StyleSheet.absoluteFillObject}
                                 initialRegion={ASHLAND_REGION}
                                 showsUserLocation
                                 onPress={handleMapPress}
                             >
-                                {pickupCoord && (
-                                    <Marker
-                                        coordinate={pickupCoord}
-                                        title="Pickup"
-                                        pinColor="#22c55e"
-                                    />
-                                )}
-                                {dropoffCoord && (
-                                    <Marker
-                                        coordinate={dropoffCoord}
-                                        title="Drop-off"
-                                        pinColor="#ef4444"
-                                    />
-                                )}
+                                {pickupCoord && <Marker coordinate={pickupCoord} title="Pickup" pinColor="#22c55e" />}
+                                {dropoffCoord && <Marker coordinate={dropoffCoord} title="Drop-off" pinColor="#ef4444" />}
                                 {pickupCoord && dropoffCoord && (
                                     <Polyline
-                                        coordinates={[
-                                            pickupCoord,
-                                            dropoffCoord,
-                                        ]}
-                                        strokeColor="#3b82f6"
-                                        strokeWidth={3}
-                                        lineDashPattern={[8, 4]}
+                                        coordinates={[pickupCoord, dropoffCoord]}
+                                        strokeColor="#3b82f6" strokeWidth={3} lineDashPattern={[8, 4]}
                                     />
                                 )}
                             </MapView>
                             {selectingMode && (
                                 <View style={styles.mapHintOverlay}>
                                     <Text style={styles.mapHintText}>
-                                        👆 Tap the map to set {selectingMode === 'pickup' ? 'pickup' : 'drop-off'} location
+                                        👆 Tap the map to set {selectingMode === 'pickup' ? 'pickup' : 'drop-off'}
                                     </Text>
                                 </View>
                             )}
                         </View>
 
-                        {/* Places inputs – container must be overflow visible */}
+                        {/* Location Inputs Card */}
                         <View style={styles.inputsCard}>
-                            <View style={styles.locationHeader}>
-                                <Text style={styles.inputLabel}>🟢  Pickup Location</Text>
-                                {pickup && (
-                                    <TouchableOpacity onPress={() => setPickup(null)} style={styles.clearBtn}>
-                                        <Text style={styles.clearText}>✕ Clear</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                            <View style={styles.inputRow}>
-                                <View style={styles.placesWrapper}>
-                                    <PlacesInput
-                                        placeholder="Enter pickup address..."
-                                        value={pickup?.name || ''}
-                                        onSelect={handleSelectPickup}
-                                        listZIndex={99999}
-                                        onFocus={() => setSelectingMode(null)}
-                                    />
+                            {/* Pickup */}
+                            <View style={[styles.locationSection, { zIndex: 100 }]}>
+                                <View style={styles.locationHeaderRow}>
+                                    <View style={styles.locationLabelRow}>
+                                        <View style={[styles.locationDot, { backgroundColor: '#22c55e' }]} />
+                                        <Text style={styles.locationLabel}>Pickup</Text>
+                                    </View>
+                                    {pickup && (
+                                        <TouchableOpacity onPress={() => setPickup(null)} style={styles.clearBtn}>
+                                            <Text style={styles.clearText}>✕</Text>
+                                        </TouchableOpacity>
+                                    )}
                                 </View>
-                                <TouchableOpacity
-                                    style={[styles.mapBtn, selectingMode === 'pickup' && styles.mapBtnActive]}
-                                    onPress={() => setSelectingMode(selectingMode === 'pickup' ? null : 'pickup')}
-                                >
-                                    <Text style={styles.mapBtnText}>📍</Text>
-                                </TouchableOpacity>
+                                <View style={styles.inputRow}>
+                                    <View style={styles.placesWrapper}>
+                                        <PlacesInput
+                                            placeholder="Search pickup address…"
+                                            value={pickup?.name || ''}
+                                            onSelect={handleSelectPickup}
+                                            listZIndex={99999}
+                                            onFocus={() => setSelectingMode(null)}
+                                        />
+                                    </View>
+                                    <TouchableOpacity
+                                        style={[styles.pinBtn, selectingMode === 'pickup' && styles.pinBtnActive]}
+                                        onPress={() => setSelectingMode(selectingMode === 'pickup' ? null : 'pickup')}
+                                    >
+                                        <Text style={styles.pinBtnIcon}>◎</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
 
-                            <View style={[styles.locationHeader, { marginTop: 20 }]}>
-                                <Text style={styles.inputLabel}>🔴  Drop-off Location</Text>
-                                {dropoff && (
-                                    <TouchableOpacity onPress={() => setDropoff(null)} style={styles.clearBtn}>
-                                        <Text style={styles.clearText}>✕ Clear</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                            <View style={styles.inputRow}>
-                                <View style={styles.placesWrapper}>
-                                    <PlacesInput
-                                        placeholder="Enter drop-off address..."
-                                        value={dropoff?.name || ''}
-                                        onSelect={handleSelectDropoff}
-                                        listZIndex={9999}
-                                        onFocus={() => setSelectingMode(null)}
-                                    />
+                            {/* Route connector */}
+                            <View style={styles.routeConnectorWrap}>
+                                <View style={styles.routeConnectorDots}>
+                                    <View style={styles.connectorDot} />
+                                    <View style={styles.connectorDot} />
+                                    <View style={styles.connectorDot} />
                                 </View>
-                                <TouchableOpacity
-                                    style={[styles.mapBtn, selectingMode === 'dropoff' && styles.mapBtnActive]}
-                                    onPress={() => setSelectingMode(selectingMode === 'dropoff' ? null : 'dropoff')}
-                                >
-                                    <Text style={styles.mapBtnText}>📍</Text>
-                                </TouchableOpacity>
+                            </View>
+
+                            {/* Drop-off */}
+                            <View style={[styles.locationSection, { zIndex: 1 }]}>
+                                <View style={styles.locationHeaderRow}>
+                                    <View style={styles.locationLabelRow}>
+                                        <View style={[styles.locationDot, { backgroundColor: '#ef4444' }]} />
+                                        <Text style={styles.locationLabel}>Drop-off</Text>
+                                    </View>
+                                    {dropoff && (
+                                        <TouchableOpacity onPress={() => setDropoff(null)} style={styles.clearBtn}>
+                                            <Text style={styles.clearText}>✕</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                                <View style={styles.inputRow}>
+                                    <View style={styles.placesWrapper}>
+                                        <PlacesInput
+                                            placeholder="Search drop-off address…"
+                                            value={dropoff?.name || ''}
+                                            onSelect={handleSelectDropoff}
+                                            listZIndex={9999}
+                                            onFocus={() => setSelectingMode(null)}
+                                        />
+                                    </View>
+                                    <TouchableOpacity
+                                        style={[styles.pinBtn, selectingMode === 'dropoff' && styles.pinBtnActive]}
+                                        onPress={() => setSelectingMode(selectingMode === 'dropoff' ? null : 'dropoff')}
+                                    >
+                                        <Text style={styles.pinBtnIcon}>◎</Text>
+                                    </TouchableOpacity>
+                                </View>
                             </View>
                         </View>
-                    </View>
+                    </Animated.View>
                 )}
 
-                {/* ─── STEP 1: DETAILS ─── */}
+                {/* ═══ STEP 1 — DETAILS ════════════════════════════ */}
                 {step === 1 && (
-                    <View style={styles.detailsCard}>
+                    <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.detailsSection}>
                         {/* Passenger Type */}
-                        <Text style={styles.fieldLabel}>Passenger Type</Text>
-                        <View style={styles.segmentRow}>
-                            {['General', 'Elderly/Disabled', 'Child'].map(type => (
+                        <Text style={styles.fieldTitle}>Rider Category</Text>
+                        <View style={styles.typeGrid}>
+                            {USER_TYPES.map(type => (
                                 <TouchableOpacity
-                                    key={type}
-                                    style={[styles.segment, userType === type && styles.segmentActive]}
-                                    onPress={() => setUserType(type)}
+                                    key={type.key}
+                                    style={[styles.typeCard, userType === type.key && styles.typeCardActive]}
+                                    onPress={() => { setUserType(type.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                                    activeOpacity={0.7}
                                 >
-                                    <Text style={[styles.segmentText, userType === type && styles.segmentTextActive]}>
-                                        {type === 'Elderly/Disabled' ? 'Elderly' : type}
+                                    <Text style={styles.typeIcon}>{type.icon}</Text>
+                                    <Text style={[styles.typeLabel, userType === type.key && styles.typeLabelActive]}>
+                                        {type.label}
                                     </Text>
                                 </TouchableOpacity>
                             ))}
                         </View>
 
                         {/* Passenger Count */}
-                        <Text style={styles.fieldLabel}>Passengers</Text>
+                        <Text style={styles.fieldTitle}>Passengers</Text>
                         <View style={styles.counterRow}>
-                            <TouchableOpacity style={styles.counterBtn} onPress={() => setPassengerCount(Math.max(1, passengerCount - 1))}>
+                            <TouchableOpacity
+                                style={styles.counterBtn}
+                                onPress={() => setPassengerCount(Math.max(1, passengerCount - 1))}
+                            >
                                 <Text style={styles.counterBtnText}>−</Text>
                             </TouchableOpacity>
-                            <Text style={styles.counterVal}>{passengerCount}</Text>
-                            <TouchableOpacity style={styles.counterBtn} onPress={() => setPassengerCount(Math.min(10, passengerCount + 1))}>
+                            <View style={styles.counterDisplay}>
+                                <Text style={styles.counterVal}>{passengerCount}</Text>
+                            </View>
+                            <TouchableOpacity
+                                style={styles.counterBtn}
+                                onPress={() => setPassengerCount(Math.min(10, passengerCount + 1))}
+                            >
                                 <Text style={styles.counterBtnText}>+</Text>
                             </TouchableOpacity>
                         </View>
 
                         {/* Date & Time */}
-                        <Text style={styles.fieldLabel}>Scheduled Date & Time</Text>
-                        <TouchableOpacity
-                            style={styles.datePickerBtn}
-                            onPress={() => setShowDatePicker(true)}
-                        >
-                            <Text style={styles.datePickerText}>
-                                📅  {scheduledDate.toLocaleDateString()} at {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
+                        <Text style={styles.fieldTitle}>Schedule</Text>
+                        <TouchableOpacity style={styles.dateBtn} onPress={() => setShowDatePicker(true)}>
+                            <Text style={styles.dateBtnIcon}>🕐</Text>
+                            <View style={styles.dateBtnTextWrap}>
+                                <Text style={styles.dateBtnDate}>
+                                    {scheduledDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                </Text>
+                                <Text style={styles.dateBtnTime}>
+                                    {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                </Text>
+                            </View>
+                            <Text style={styles.dateBtnArrow}>›</Text>
                         </TouchableOpacity>
 
                         {showDatePicker && (
                             <DateTimePicker
-                                value={scheduledDate}
-                                mode="date"
-                                display="default"
+                                value={scheduledDate} mode="date" display="default"
                                 minimumDate={new Date()}
-                                onChange={(e, date) => {
-                                    setShowDatePicker(false);
-                                    if (date) { setScheduledDate(date); setShowTimePicker(true); }
-                                }}
+                                onChange={(e, date) => { setShowDatePicker(false); if (date) { setScheduledDate(date); setShowTimePicker(true); } }}
                             />
                         )}
                         {showTimePicker && (
                             <DateTimePicker
-                                value={scheduledDate}
-                                mode="time"
-                                display="default"
-                                onChange={(e, date) => {
-                                    setShowTimePicker(false);
-                                    if (date) setScheduledDate(date);
-                                }}
+                                value={scheduledDate} mode="time" display="default"
+                                onChange={(e, date) => { setShowTimePicker(false); if (date) setScheduledDate(date); }}
                             />
                         )}
 
                         {/* Toggles */}
                         <View style={styles.toggleRow}>
-                            <View style={styles.toggleItem}>
+                            <View style={styles.toggleCard}>
                                 <Text style={styles.toggleLabel}>Same Day</Text>
-                                <TouchableOpacity
-                                    style={[styles.toggle, isSameDay && styles.toggleOn]}
-                                    onPress={() => setIsSameDay(!isSameDay)}
-                                >
+                                <TouchableOpacity style={[styles.toggle, isSameDay && styles.toggleOn]} onPress={() => setIsSameDay(!isSameDay)}>
                                     <View style={[styles.toggleThumb, isSameDay && styles.toggleThumbOn]} />
                                 </TouchableOpacity>
                             </View>
-                            <View style={styles.toggleItem}>
+                            <View style={styles.toggleCard}>
                                 <Text style={styles.toggleLabel}>Out of Town</Text>
-                                <TouchableOpacity
-                                    style={[styles.toggle, isOutOfTown && styles.toggleOn]}
-                                    onPress={() => setIsOutOfTown(!isOutOfTown)}
-                                >
+                                <TouchableOpacity style={[styles.toggle, isOutOfTown && styles.toggleOn]} onPress={() => setIsOutOfTown(!isOutOfTown)}>
                                     <View style={[styles.toggleThumb, isOutOfTown && styles.toggleThumbOn]} />
                                 </TouchableOpacity>
                             </View>
@@ -461,88 +543,120 @@ const RiderBookingScreen = ({ navigation, route }) => {
 
                         {isOutOfTown && (
                             <>
-                                <Text style={styles.fieldLabel}>Estimated Miles</Text>
+                                <Text style={styles.fieldTitle}>Estimated Miles</Text>
                                 <View style={styles.counterRow}>
                                     <TouchableOpacity style={styles.counterBtn} onPress={() => setMileage(Math.max(1, mileage - 1))}>
                                         <Text style={styles.counterBtnText}>−</Text>
                                     </TouchableOpacity>
-                                    <Text style={styles.counterVal}>{mileage} mi</Text>
+                                    <View style={styles.counterDisplay}>
+                                        <Text style={styles.counterVal}>{mileage} mi</Text>
+                                    </View>
                                     <TouchableOpacity style={styles.counterBtn} onPress={() => setMileage(mileage + 1)}>
                                         <Text style={styles.counterBtnText}>+</Text>
                                     </TouchableOpacity>
                                 </View>
                             </>
                         )}
-                    </View>
+
+                        {/* Payment */}
+                        <Text style={styles.fieldTitle}>Payment</Text>
+                        <View style={styles.paymentRow}>
+                            {[
+                                { key: 'Cash', icon: '🪙', label: 'Cash' },
+                                { key: 'Stripe', icon: '🔖', label: 'Card' },
+                            ].map(pm => (
+                                <TouchableOpacity
+                                    key={pm.key}
+                                    style={[styles.paymentBtn, paymentMethod === pm.key && styles.paymentBtnActive]}
+                                    onPress={() => { setPaymentMethod(pm.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.paymentIcon}>{pm.icon}</Text>
+                                    <Text style={[styles.paymentLabel, paymentMethod === pm.key && styles.paymentLabelActive]}>
+                                        {pm.label}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </Animated.View>
                 )}
 
-                {/* ─── STEP 2: CONFIRM ─── */}
+                {/* ═══ STEP 2 — CONFIRM ════════════════════════════ */}
                 {step === 2 && (
-                    <View style={styles.confirmCard}>
-                        <Text style={styles.confirmTitle}>Confirm Your Ride</Text>
+                    <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.confirmSection}>
+                        <Text style={styles.confirmTitle}>Review & Confirm</Text>
 
-                        <View style={styles.fareDisplay}>
-                            <Text style={styles.fareLabel}>Estimated Fare</Text>
+                        {/* Fare Card */}
+                        <LinearGradient
+                            colors={['#0f172a', '#1e293b']}
+                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            style={styles.fareCard}
+                        >
+                            <View style={styles.fareGlow} />
+                            <Text style={styles.fareCaption}>ESTIMATED FARE</Text>
                             <Text style={styles.fareAmount}>${estimateFare()}</Text>
+                            <Text style={styles.fareMeta}>{passengerCount} pax · {userType}</Text>
+                        </LinearGradient>
+
+                        {/* Summary List */}
+                        <View style={styles.summaryCard}>
+                            {[
+                                { icon: '◉', color: '#22c55e', label: 'Pickup', value: pickup?.name || '—' },
+                                { icon: '◉', color: '#ef4444', label: 'Drop-off', value: dropoff?.name || '—' },
+                                { icon: '🕐', color: '#3b82f6', label: 'Schedule', value: `${scheduledDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` },
+                                { icon: '🧑‍💼', color: '#8b5cf6', label: 'Riders', value: `${passengerCount} · ${userType}` },
+                                { icon: paymentMethod === 'Stripe' ? '🔖' : '🪙', color: '#f59e0b', label: 'Payment', value: paymentMethod === 'Stripe' ? 'Card (Stripe)' : 'Cash' },
+                            ].map((item, i, arr) => (
+                                <React.Fragment key={item.label}>
+                                    <View style={styles.summaryRow}>
+                                        <View style={[styles.summaryIconWrap, { backgroundColor: item.color + '15' }]}>
+                                            <Text style={[styles.summaryIcon, { color: item.color }]}>{item.icon}</Text>
+                                        </View>
+                                        <View style={styles.summaryTextBlock}>
+                                            <Text style={styles.summaryLabel}>{item.label}</Text>
+                                            <Text style={styles.summaryValue} numberOfLines={2}>{item.value}</Text>
+                                        </View>
+                                    </View>
+                                    {i < arr.length - 1 && <View style={styles.summaryDivider} />}
+                                </React.Fragment>
+                            ))}
                         </View>
 
-                        <View style={styles.summarySection}>
-                            <View style={styles.summaryRow}>
-                                <Text style={styles.summaryIcon}>🟢</Text>
-                                <View style={styles.summaryTextBlock}>
-                                    <Text style={styles.summaryLabel}>Pickup</Text>
-                                    <Text style={styles.summaryValue}>{pickup?.name || '—'}</Text>
-                                </View>
-                            </View>
-                            <View style={styles.summaryDivider} />
-                            <View style={styles.summaryRow}>
-                                <Text style={styles.summaryIcon}>🔴</Text>
-                                <View style={styles.summaryTextBlock}>
-                                    <Text style={styles.summaryLabel}>Drop-off</Text>
-                                    <Text style={styles.summaryValue}>{dropoff?.name || '—'}</Text>
-                                </View>
-                            </View>
-                            <View style={styles.summaryDivider} />
-                            <View style={styles.summaryRow}>
-                                <Text style={styles.summaryIcon}>📅</Text>
-                                <View style={styles.summaryTextBlock}>
-                                    <Text style={styles.summaryLabel}>Date & Time</Text>
-                                    <Text style={styles.summaryValue}>
-                                        {scheduledDate.toLocaleDateString()} at {scheduledDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </Text>
-                                </View>
-                            </View>
-                            <View style={styles.summaryDivider} />
-                            <View style={styles.summaryRow}>
-                                <Text style={styles.summaryIcon}>👥</Text>
-                                <View style={styles.summaryTextBlock}>
-                                    <Text style={styles.summaryLabel}>Passengers</Text>
-                                    <Text style={styles.summaryValue}>{passengerCount} · {userType}</Text>
-                                </View>
-                            </View>
-                        </View>
-
+                        {/* Confirm Button */}
                         {loading ? (
                             <View style={styles.loadingBox}>
-                                <ActivityIndicator size="large" color="#059669" />
-                                <Text style={styles.loadingText}>Booking your ride...</Text>
+                                <ActivityIndicator size="large" color="#2563eb" />
+                                <Text style={styles.loadingText}>Booking your ride…</Text>
                             </View>
                         ) : (
-                            <TouchableOpacity style={styles.confirmBtn} onPress={handleConfirm} activeOpacity={0.85}>
-                                <Text style={styles.confirmBtnText}>✓  Confirm Booking</Text>
-                            </TouchableOpacity>
+                            <PressableButton
+                                colors={paymentMethod === 'Stripe' ? ['#4f46e5', '#6366f1'] : ['#059669', '#047857']}
+                                onPress={handleConfirm}
+                                style={styles.confirmBtn}
+                            >
+                                <Text style={styles.confirmBtnText}>
+                                    {paymentMethod === 'Stripe' ? '🔖  Continue to Payment' : '✦  Confirm Booking'}
+                                </Text>
+                            </PressableButton>
                         )}
-                    </View>
+                    </Animated.View>
                 )}
             </ScrollView>
 
-            {/* Bottom Navigation */}
+            {/* ══ BOTTOM NAVIGATION ═════════════════════════════════ */}
             {step < 2 && (
                 <View style={styles.bottomBar}>
-                    <TouchableOpacity style={styles.nextBtn} onPress={goNext} activeOpacity={0.85}>
-                        <Text style={styles.nextBtnText}>
-                            {step === 0 ? 'Choose Details →' : 'Review Booking →'}
-                        </Text>
+                    <TouchableOpacity onPress={goNext} activeOpacity={0.85}>
+                        <LinearGradient
+                            colors={['#1e3a8a', '#2563eb']}
+                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            style={styles.nextBtn}
+                        >
+                            <Text style={styles.nextBtnText}>
+                                {step === 0 ? 'Continue to Details' : 'Review Booking'}
+                            </Text>
+                            <Text style={styles.nextBtnArrow}>›</Text>
+                        </LinearGradient>
                     </TouchableOpacity>
                 </View>
             )}
@@ -550,88 +664,251 @@ const RiderBookingScreen = ({ navigation, route }) => {
     );
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   STYLES — consistent EDGE padding, aligned grid, pixel-perfect spacing
+   ═══════════════════════════════════════════════════════════════════════ */
 const styles = StyleSheet.create({
-    safe: { flex: 1, backgroundColor: '#f8fafc' },
+    safe: { flex: 1, backgroundColor: '#f0f4f8' },
+
+    /* Header */
     header: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-        paddingHorizontal: 16, paddingVertical: 14, backgroundColor: 'white',
+        flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: EDGE, paddingVertical: 14,
+    },
+    backBtn: {
+        width: 38, height: 38, alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 12,
+    },
+    backArrow: { fontSize: 24, color: 'white', fontWeight: '300', marginTop: -2 },
+    headerTitle: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: '900', color: 'white' },
+    headerSpacer: { width: 38 },
+
+    /* Step Indicator */
+    stepBar: {
+        flexDirection: 'row', alignItems: 'center',
+        paddingHorizontal: EDGE + 8, paddingVertical: 14,
+        backgroundColor: 'white',
         borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
     },
-    backBtn: { width: 40, height: 40, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f1f5f9', borderRadius: 20 },
-    backArrow: { fontSize: 18, color: '#334155', fontWeight: '700' },
-    headerTitle: { fontSize: 17, fontWeight: '800', color: '#0f172a' },
-    stepRow: {
-        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-        padding: 16, backgroundColor: 'white', borderBottomWidth: 1, borderBottomColor: '#f1f5f9',
+    stepItem: { alignItems: 'center', width: 56 },
+    stepCircle: {
+        width: 36, height: 36, borderRadius: 18,
+        backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center',
+        borderWidth: 2, borderColor: '#e2e8f0',
     },
-    stepItem: { alignItems: 'center', gap: 4 },
-    stepCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#e2e8f0', alignItems: 'center', justifyContent: 'center' },
-    stepCircleActive: { backgroundColor: '#059669' },
-    stepNum: { fontSize: 13, fontWeight: '800', color: '#94a3b8' },
-    stepNumActive: { color: 'white' },
-    stepLabel: { fontSize: 10, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase' },
-    stepLabelActive: { color: '#059669' },
-    stepConnector: { flex: 1, height: 2, backgroundColor: '#e2e8f0', marginHorizontal: 4, marginBottom: 16 },
-    stepConnectorActive: { backgroundColor: '#059669' },
+    stepCircleActive: { backgroundColor: '#eff6ff', borderColor: '#3b82f6' },
+    stepCircleDone: { backgroundColor: '#059669', borderColor: '#059669' },
+    stepDoneIcon: { fontSize: 14, fontWeight: '900', color: 'white' },
+    stepIcon: { fontSize: 15 },
+    stepIconActive: {},
+    stepLabel: {
+        fontSize: 9, fontWeight: '700', color: '#94a3b8',
+        textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 4,
+    },
+    stepLabelActive: { color: '#2563eb', fontWeight: '800' },
+    stepLabelDone: { color: '#059669' },
+    stepLine: {
+        flex: 1, height: 2, backgroundColor: '#e2e8f0',
+        marginHorizontal: 2, marginBottom: 18,
+    },
+    stepLineDone: { backgroundColor: '#059669' },
+
+    /* Body */
     body: { flex: 1 },
-    bodyContent: { paddingBottom: 100 },
-    mapContainer: { height: 220, backgroundColor: '#e2e8f0' },
+    bodyContent: { paddingBottom: 110 },
+
+    /* Map */
+    mapContainer: {
+        height: 200, backgroundColor: '#e2e8f0',
+        overflow: 'hidden',
+    },
+    mapHintOverlay: {
+        position: 'absolute', top: 12, left: EDGE, right: EDGE,
+        backgroundColor: 'rgba(37,99,235,0.92)',
+        paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10,
+    },
+    mapHintText: { color: 'white', fontWeight: '700', textAlign: 'center', fontSize: 13 },
+
+    /* Location Inputs Card */
     inputsCard: {
-        backgroundColor: 'white', padding: 20, margin: 16, borderRadius: 20,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
-        shadowOpacity: 0.08, shadowRadius: 8, elevation: 4,
+        backgroundColor: 'white', marginHorizontal: EDGE, marginTop: -16,
+        borderRadius: 18, padding: 16,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08, shadowRadius: 12, elevation: 5,
         overflow: 'visible', zIndex: 10,
     },
+    locationSection: {},
+    locationHeaderRow: {
+        flexDirection: 'row', justifyContent: 'space-between',
+        alignItems: 'center', marginBottom: 8,
+    },
+    locationLabelRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    locationDot: { width: 8, height: 8, borderRadius: 4 },
+    locationLabel: {
+        fontSize: 11, fontWeight: '800', color: '#374151',
+        textTransform: 'uppercase', letterSpacing: 0.5,
+    },
+    clearBtn: {
+        width: 28, height: 28, borderRadius: 14,
+        backgroundColor: '#fee2e2', alignItems: 'center', justifyContent: 'center',
+    },
+    clearText: { fontSize: 12, fontWeight: '700', color: '#dc2626' },
+    inputRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
     placesWrapper: { flex: 1, zIndex: 999, overflow: 'visible' },
-    inputLabel: { fontSize: 12, fontWeight: '800', color: '#374151', marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 },
-    locationHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
-    clearBtn: { paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#fee2e2', borderRadius: 8 },
-    clearText: { fontSize: 10, fontWeight: '700', color: '#dc2626' },
-    inputRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-    mapBtn: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center', marginTop: 0, borderWidth: 2, borderColor: '#e2e8f0' },
-    mapBtnActive: { backgroundColor: '#dbeafe', borderColor: '#3b82f6' },
-    mapBtnText: { fontSize: 20 },
-    mapHintOverlay: { position: 'absolute', top: 20, left: 20, right: 20, backgroundColor: 'rgba(59, 130, 246, 0.95)', paddingVertical: 12, paddingHorizontal: 16, borderRadius: 10, zIndex: 100 },
-    mapHintText: { color: 'white', fontWeight: '700', textAlign: 'center', fontSize: 14 },
-    detailsCard: { backgroundColor: 'white', margin: 16, padding: 20, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
-    fieldLabel: { fontSize: 12, fontWeight: '800', color: '#374151', marginBottom: 10, marginTop: 16, textTransform: 'uppercase', letterSpacing: 0.5 },
-    segmentRow: { flexDirection: 'row', gap: 8 },
-    segment: { flex: 1, paddingVertical: 10, borderRadius: 10, borderWidth: 2, borderColor: '#e2e8f0', alignItems: 'center' },
-    segmentActive: { borderColor: '#059669', backgroundColor: '#f0fdf4' },
-    segmentText: { fontSize: 11, fontWeight: '700', color: '#94a3b8' },
-    segmentTextActive: { color: '#059669' },
-    counterRow: { flexDirection: 'row', alignItems: 'center', gap: 16 },
-    counterBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#f1f5f9', alignItems: 'center', justifyContent: 'center' },
+    pinBtn: {
+        width: 44, height: 44, borderRadius: 12,
+        backgroundColor: '#f8fafc', alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1.5, borderColor: '#e2e8f0',
+    },
+    pinBtnActive: { backgroundColor: '#dbeafe', borderColor: '#3b82f6' },
+    pinBtnIcon: { fontSize: 18, color: '#64748b', fontWeight: '700' },
+
+    /* Route connector between pickup/dropoff */
+    routeConnectorWrap: { paddingLeft: 3, marginVertical: 8 },
+    routeConnectorDots: { alignItems: 'center', width: 8, gap: 3 },
+    connectorDot: { width: 3, height: 3, borderRadius: 1.5, backgroundColor: '#cbd5e1' },
+
+    /* ── Details section ───────────────────────────────────────── */
+    detailsSection: {
+        backgroundColor: 'white', margin: EDGE, padding: 20, borderRadius: 18,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.07, shadowRadius: 10, elevation: 4,
+    },
+    fieldTitle: {
+        fontSize: 11, fontWeight: '800', color: '#64748b',
+        textTransform: 'uppercase', letterSpacing: 1,
+        marginTop: 18, marginBottom: 10,
+    },
+    typeGrid: {
+        flexDirection: 'row', flexWrap: 'wrap',
+        gap: 8,
+    },
+    typeCard: {
+        width: (width - EDGE * 2 - 40 - 16) / 3,
+        paddingVertical: 12, borderRadius: 12,
+        backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0',
+        alignItems: 'center', gap: 3,
+    },
+    typeCardActive: { borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
+    typeIcon: { fontSize: 22 },
+    typeLabel: { fontSize: 9, fontWeight: '800', color: '#64748b', textTransform: 'uppercase' },
+    typeLabelActive: { color: '#2563eb' },
+
+    counterRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    counterBtn: {
+        width: 42, height: 42, borderRadius: 12, backgroundColor: '#f1f5f9',
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: 1, borderColor: '#e2e8f0',
+    },
     counterBtnText: { fontSize: 20, fontWeight: '700', color: '#1e293b' },
-    counterVal: { fontSize: 22, fontWeight: '900', color: '#0f172a', minWidth: 60, textAlign: 'center' },
-    datePickerBtn: { backgroundColor: '#f8fafc', padding: 14, borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0' },
-    datePickerText: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
-    toggleRow: { flexDirection: 'row', gap: 16, marginTop: 8 },
-    toggleItem: { flex: 1, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 12, backgroundColor: '#f8fafc', borderRadius: 12 },
-    toggleLabel: { fontSize: 13, fontWeight: '700', color: '#374151' },
-    toggle: { width: 48, height: 26, backgroundColor: '#e2e8f0', borderRadius: 13, padding: 2 },
+    counterDisplay: {
+        minWidth: 56, paddingHorizontal: 14, paddingVertical: 8,
+        backgroundColor: '#f8fafc', borderRadius: 10, alignItems: 'center',
+    },
+    counterVal: { fontSize: 18, fontWeight: '900', color: '#0f172a' },
+
+    /* Date Button */
+    dateBtn: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: '#f8fafc', padding: 12, borderRadius: 12,
+        borderWidth: 1, borderColor: '#e2e8f0', gap: 10,
+    },
+    dateBtnIcon: { fontSize: 18 },
+    dateBtnTextWrap: { flex: 1 },
+    dateBtnDate: { fontSize: 14, fontWeight: '700', color: '#1e293b' },
+    dateBtnTime: { fontSize: 12, fontWeight: '600', color: '#64748b', marginTop: 1 },
+    dateBtnArrow: { fontSize: 22, color: '#94a3b8', fontWeight: '300' },
+
+    /* Toggles */
+    toggleRow: { flexDirection: 'row', gap: 10, marginTop: 6 },
+    toggleCard: {
+        flex: 1, flexDirection: 'row', justifyContent: 'space-between',
+        alignItems: 'center', padding: 12, backgroundColor: '#f8fafc',
+        borderRadius: 12, borderWidth: 1, borderColor: '#e2e8f0',
+    },
+    toggleLabel: { fontSize: 12, fontWeight: '700', color: '#374151' },
+    toggle: { width: 44, height: 24, backgroundColor: '#e2e8f0', borderRadius: 12, padding: 2, justifyContent: 'center' },
     toggleOn: { backgroundColor: '#059669' },
-    toggleThumb: { width: 22, height: 22, backgroundColor: 'white', borderRadius: 11, shadowColor: '#000', shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 2 },
-    toggleThumbOn: { transform: [{ translateX: 22 }] },
-    confirmCard: { backgroundColor: 'white', margin: 16, padding: 20, borderRadius: 20, shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 8, elevation: 4 },
-    confirmTitle: { fontSize: 22, fontWeight: '900', color: '#0f172a', marginBottom: 20 },
-    fareDisplay: { backgroundColor: '#f0fdf4', padding: 20, borderRadius: 16, alignItems: 'center', marginBottom: 24, borderWidth: 2, borderColor: '#bbf7d0' },
-    fareLabel: { fontSize: 12, fontWeight: '700', color: '#166534', textTransform: 'uppercase', letterSpacing: 1 },
-    fareAmount: { fontSize: 48, fontWeight: '900', color: '#059669', marginTop: 4 },
-    summarySection: { backgroundColor: '#f8fafc', borderRadius: 16, padding: 4, marginBottom: 24 },
-    summaryRow: { flexDirection: 'row', alignItems: 'flex-start', padding: 14, gap: 12 },
-    summaryIcon: { fontSize: 18, marginTop: 2 },
+    toggleThumb: {
+        width: 20, height: 20, backgroundColor: 'white', borderRadius: 10,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.15, shadowRadius: 2, elevation: 2,
+    },
+    toggleThumbOn: { transform: [{ translateX: 20 }] },
+
+    /* Payment */
+    paymentRow: { flexDirection: 'row', gap: 10 },
+    paymentBtn: {
+        flex: 1, paddingVertical: 14, borderRadius: 12,
+        backgroundColor: '#f8fafc', borderWidth: 1.5, borderColor: '#e2e8f0',
+        alignItems: 'center', gap: 3,
+    },
+    paymentBtnActive: { borderColor: '#3b82f6', backgroundColor: '#eff6ff' },
+    paymentIcon: { fontSize: 22 },
+    paymentLabel: { fontSize: 10, fontWeight: '800', color: '#64748b', textTransform: 'uppercase' },
+    paymentLabelActive: { color: '#2563eb' },
+
+    /* ── Confirm section ───────────────────────────────────────── */
+    confirmSection: {
+        margin: EDGE, padding: 20, backgroundColor: 'white', borderRadius: 18,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 3 },
+        shadowOpacity: 0.07, shadowRadius: 10, elevation: 4,
+    },
+    confirmTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 16 },
+    fareCard: {
+        borderRadius: 16, padding: 22, alignItems: 'center',
+        marginBottom: 20, overflow: 'hidden',
+    },
+    fareGlow: {
+        position: 'absolute', top: -25, right: -25,
+        width: 90, height: 90, borderRadius: 45,
+        backgroundColor: 'rgba(59,130,246,0.12)',
+    },
+    fareCaption: { fontSize: 10, fontWeight: '800', color: '#64748b', letterSpacing: 2 },
+    fareAmount: { fontSize: 44, fontWeight: '900', color: 'white', marginTop: 2, letterSpacing: -1 },
+    fareMeta: { fontSize: 11, fontWeight: '700', color: '#94a3b8', marginTop: 4 },
+
+    /* Summary */
+    summaryCard: {
+        backgroundColor: '#f8fafc', borderRadius: 14, overflow: 'hidden', marginBottom: 20,
+    },
+    summaryRow: {
+        flexDirection: 'row', alignItems: 'center', padding: 12, gap: 12,
+    },
+    summaryIconWrap: {
+        width: 34, height: 34, borderRadius: 10,
+        alignItems: 'center', justifyContent: 'center',
+    },
+    summaryIcon: { fontSize: 14 },
     summaryTextBlock: { flex: 1 },
-    summaryLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 },
-    summaryValue: { fontSize: 14, fontWeight: '700', color: '#0f172a' },
-    summaryDivider: { height: 1, backgroundColor: '#e2e8f0', marginHorizontal: 14 },
-    loadingBox: { alignItems: 'center', padding: 24, gap: 12 },
-    loadingText: { fontSize: 15, fontWeight: '700', color: '#64748b' },
-    confirmBtn: { backgroundColor: '#059669', padding: 18, borderRadius: 16, alignItems: 'center', shadowColor: '#059669', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-    confirmBtnText: { color: 'white', fontSize: 17, fontWeight: '900', letterSpacing: 0.5 },
-    bottomBar: { position: 'absolute', bottom: 0, left: 0, right: 0, padding: 20, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-    nextBtn: { backgroundColor: '#0f172a', padding: 18, borderRadius: 16, alignItems: 'center' },
-    nextBtnText: { color: 'white', fontSize: 16, fontWeight: '800' },
+    summaryLabel: {
+        fontSize: 9, fontWeight: '700', color: '#94a3b8',
+        textTransform: 'uppercase', letterSpacing: 0.5,
+    },
+    summaryValue: { fontSize: 13, fontWeight: '700', color: '#0f172a', marginTop: 1 },
+    summaryDivider: { height: 1, backgroundColor: '#e2e8f0', marginHorizontal: 12 },
+
+    loadingBox: { alignItems: 'center', padding: 20, gap: 10 },
+    loadingText: { fontSize: 14, fontWeight: '700', color: '#64748b' },
+    confirmBtn: { borderRadius: 14, overflow: 'hidden' },
+    gradientInner: { padding: 16, borderRadius: 14, alignItems: 'center' },
+    confirmBtnText: { color: 'white', fontSize: 16, fontWeight: '900', letterSpacing: 0.3 },
+
+    /* Bottom Bar */
+    bottomBar: {
+        position: 'absolute', bottom: 0, left: 0, right: 0,
+        paddingHorizontal: EDGE, paddingVertical: 16, paddingBottom: 24,
+        backgroundColor: 'white',
+        borderTopWidth: 1, borderTopColor: '#f1f5f9',
+        shadowColor: '#000', shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.04, shadowRadius: 6, elevation: 4,
+    },
+    nextBtn: {
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        padding: 16, borderRadius: 14, gap: 6,
+    },
+    nextBtnText: { color: 'white', fontSize: 15, fontWeight: '900' },
+    nextBtnArrow: { color: 'rgba(255,255,255,0.7)', fontSize: 22, fontWeight: '300' },
 });
 
 export default RiderBookingScreen;

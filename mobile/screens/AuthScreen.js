@@ -1,275 +1,271 @@
 import React, { useState } from 'react';
 import {
-    StyleSheet,
-    Text,
-    View,
-    TextInput,
-    TouchableOpacity,
-    Alert,
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView
+    StyleSheet, Text, View, TextInput, TouchableOpacity,
+    Alert, KeyboardAvoidingView, Platform, ScrollView,
+    ActivityIndicator, Dimensions, StatusBar,
 } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+    FadeInDown, FadeIn,
+    useSharedValue, useAnimatedStyle, withSpring, withSequence,
+} from 'react-native-reanimated';
 import { login, signup } from '../services/api';
+
+const { width } = Dimensions.get('window');
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 const AuthScreen = ({ onLogin }) => {
     const [isLogin, setIsLogin] = useState(true);
     const [loading, setLoading] = useState(false);
-
-    // Form State
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
-    const [email, setEmail] = useState(''); // Optional/Future use? Server doesn't strictly need it but good practice
     const [phoneNumber, setPhoneNumber] = useState('');
-    const [role, setRole] = useState('Rider'); // Default
+    const [role, setRole] = useState('Rider');
+
+    const btnScale = useSharedValue(1);
+    const btnStyle = useAnimatedStyle(() => ({ transform: [{ scale: btnScale.value }] }));
 
     const handleSubmit = async () => {
         if (!username || !password) {
-            Alert.alert("Error", "Please fill in all required fields.");
+            Alert.alert('Error', 'Please fill in all required fields.');
             return;
         }
+        btnScale.value = withSequence(
+            withSpring(0.95, { damping: 12, stiffness: 400 }),
+            withSpring(1, { damping: 8, stiffness: 300 })
+        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
         setLoading(true);
         try {
-            let response;
             if (isLogin) {
-                console.log("Attempting login...");
-                response = await login(username, password);
-                Alert.alert("Success", `Welcome back, ${response.username}!`);
-                console.log("Logged in:", response);
+                const response = await login(username, password);
+                Alert.alert('Success', `Welcome back, ${response.username}!`);
                 if (onLogin) onLogin(response);
             } else {
-                console.log("Attempting signup...");
-                const userData = {
-                    username,
-                    password,
-                    role,
-                    phoneNumber,
-                    // email // Add to request if backend expects it
-                };
-                response = await signup(userData);
-                Alert.alert("Success", "Account created! Please log in.");
-                console.log("Signed up:", response);
-                setIsLogin(true); // Switch to login to confirm
+                const userData = { username, password, role, phoneNumber };
+                await signup(userData);
+                Alert.alert('Success', 'Account created! Please log in.');
+                setIsLogin(true);
             }
         } catch (error) {
-            const msg = error.response?.data?.message || "Something went wrong";
-            Alert.alert("Authentication Failed", msg);
+            const msg = error.response?.data?.message || 'Something went wrong';
+            Alert.alert('Authentication Failed', msg);
         } finally {
             setLoading(false);
         }
     };
 
-    const checkBiometrics = async () => {
-        Alert.alert("Biometrics", "FaceID/TouchID feature coming soon!");
-        // TODO: Implement expo-local-authentication
-    };
-
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
-            style={styles.container}
-        >
-            <ScrollView contentContainerStyle={styles.scrollContainer}>
-                <Text style={styles.title}>Ashland Transit</Text>
-                <Text style={styles.subtitle}>{isLogin ? "Welcome Back" : "Create Account"}</Text>
+        <View style={styles.outerContainer}>
+            <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
+            {/* Background Gradient */}
+            <LinearGradient
+                colors={['#0f172a', '#1e293b', '#0f172a']}
+                style={StyleSheet.absoluteFillObject}
+            />
 
-                <View style={styles.form}>
-                    <Text style={styles.label}>Username</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={username}
-                        onChangeText={setUsername}
-                        placeholder="Enter username"
-                        autoCapitalize="none"
-                    />
+            {/* Decorative Elements */}
+            <View style={[styles.decorCircle, { top: -60, right: -60, width: 200, height: 200, backgroundColor: 'rgba(37,99,235,0.08)' }]} />
+            <View style={[styles.decorCircle, { bottom: 80, left: -40, width: 150, height: 150, backgroundColor: 'rgba(5,150,105,0.06)' }]} />
 
-                    <Text style={styles.label}>Password</Text>
-                    <TextInput
-                        style={styles.input}
-                        value={password}
-                        onChangeText={setPassword}
-                        placeholder="Enter password"
-                        secureTextEntry
-                    />
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.container}
+            >
+                <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
+                    {/* Logo Area */}
+                    <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.logoSection}>
+                        <View style={styles.logoBadge}>
+                            <LinearGradient
+                                colors={['#2563eb', '#1d4ed8']}
+                                style={styles.logoGradient}
+                            >
+                                <Text style={styles.logoEmoji}>🚐</Text>
+                            </LinearGradient>
+                        </View>
+                        <Text style={styles.title}>Ashland Transit</Text>
+                        <Text style={styles.subtitle}>{isLogin ? 'Welcome Back' : 'Create Account'}</Text>
+                    </Animated.View>
 
-                    {!isLogin && (
-                        <>
-                            {/* Additional Signup Fields */}
-                            <Text style={styles.label}>Phone Number</Text>
+                    {/* Form Card */}
+                    <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.formCard}>
+                        {/* Username */}
+                        <Text style={styles.label}>Username</Text>
+                        <View style={styles.inputWrap}>
+                            <Text style={styles.inputIcon}>👤</Text>
                             <TextInput
                                 style={styles.input}
-                                value={phoneNumber}
-                                onChangeText={setPhoneNumber}
-                                placeholder="555-0000"
-                                keyboardType="phone-pad"
+                                value={username}
+                                onChangeText={setUsername}
+                                placeholder="Enter username"
+                                placeholderTextColor="#64748b"
+                                autoCapitalize="none"
                             />
+                        </View>
 
-                            <Text style={styles.label}>I am a:</Text>
-                            <View style={styles.roleContainer}>
-                                <TouchableOpacity
-                                    style={[styles.roleButton, role === 'Rider' && styles.roleButtonActive]}
-                                    onPress={() => setRole('Rider')}
-                                >
-                                    <Text style={[styles.roleText, role === 'Rider' && styles.roleTextActive]}>Rider</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={[styles.roleButton, role === 'Driver' && styles.roleButtonActive]}
-                                    onPress={() => setRole('Driver')}
-                                >
-                                    <Text style={[styles.roleText, role === 'Driver' && styles.roleTextActive]}>Driver</Text>
-                                </TouchableOpacity>
-                            </View>
-                        </>
-                    )}
+                        {/* Password */}
+                        <Text style={styles.label}>Password</Text>
+                        <View style={styles.inputWrap}>
+                            <Text style={styles.inputIcon}>🔒</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={password}
+                                onChangeText={setPassword}
+                                placeholder="Enter password"
+                                placeholderTextColor="#64748b"
+                                secureTextEntry
+                            />
+                        </View>
 
-                    <TouchableOpacity
-                        style={styles.button}
-                        onPress={handleSubmit}
-                        disabled={loading}
-                    >
-                        <Text style={styles.buttonText}>
-                            {loading ? "Processing..." : (isLogin ? "Log In" : "Sign Up")}
-                        </Text>
-                    </TouchableOpacity>
+                        {!isLogin && (
+                            <Animated.View entering={FadeInDown.delay(100).springify()}>
+                                {/* Phone */}
+                                <Text style={styles.label}>Phone Number</Text>
+                                <View style={styles.inputWrap}>
+                                    <Text style={styles.inputIcon}>📱</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={phoneNumber}
+                                        onChangeText={setPhoneNumber}
+                                        placeholder="555-0000"
+                                        placeholderTextColor="#64748b"
+                                        keyboardType="phone-pad"
+                                    />
+                                </View>
 
-                    {/* Biometric Stub */}
-                    {isLogin && (
-                        <TouchableOpacity style={styles.biometricButton} onPress={checkBiometrics}>
-                            <Text style={styles.biometricText}>Login with FaceID</Text>
+                                {/* Role */}
+                                <Text style={styles.label}>I am a:</Text>
+                                <View style={styles.roleContainer}>
+                                    {[
+                                        { key: 'Rider', emoji: '🧑', label: 'Rider' },
+                                        { key: 'Driver', emoji: '🚐', label: 'Driver' },
+                                    ].map(item => (
+                                        <TouchableOpacity
+                                            key={item.key}
+                                            style={[styles.roleButton, role === item.key && styles.roleButtonActive]}
+                                            onPress={() => { setRole(item.key); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                                        >
+                                            <Text style={styles.roleEmoji}>{item.emoji}</Text>
+                                            <Text style={[styles.roleText, role === item.key && styles.roleTextActive]}>{item.label}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </Animated.View>
+                        )}
+
+                        {/* Submit Button */}
+                        <AnimatedTouchable style={btnStyle} onPress={handleSubmit} disabled={loading} activeOpacity={1}>
+                            <LinearGradient
+                                colors={isLogin ? ['#2563eb', '#1d4ed8'] : ['#059669', '#047857']}
+                                start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                                style={styles.submitBtn}
+                            >
+                                {loading ? (
+                                    <ActivityIndicator color="white" />
+                                ) : (
+                                    <Text style={styles.submitBtnText}>
+                                        {isLogin ? 'Sign In' : 'Create Account'}
+                                    </Text>
+                                )}
+                            </LinearGradient>
+                        </AnimatedTouchable>
+
+                        {/* Biometric */}
+                        {isLogin && (
+                            <TouchableOpacity
+                                style={styles.biometricButton}
+                                onPress={() => Alert.alert('Biometrics', 'FaceID/TouchID coming soon!')}
+                            >
+                                <Text style={styles.biometricText}>🔐 Login with FaceID</Text>
+                            </TouchableOpacity>
+                        )}
+                    </Animated.View>
+
+                    {/* Toggle */}
+                    <Animated.View entering={FadeIn.delay(400)}>
+                        <TouchableOpacity
+                            onPress={() => { setIsLogin(!isLogin); Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); }}
+                            style={styles.toggleButton}
+                        >
+                            <Text style={styles.toggleText}>
+                                {isLogin ? "Don't have an account? " : 'Already have an account? '}
+                                <Text style={styles.toggleHighlight}>{isLogin ? 'Sign Up' : 'Sign In'}</Text>
+                            </Text>
                         </TouchableOpacity>
-                    )}
-
-                    <TouchableOpacity onPress={() => setIsLogin(!isLogin)} style={styles.toggleButton}>
-                        <Text style={styles.toggleText}>
-                            {isLogin ? "Need an account? Sign Up" : "Already have an account? Log In"}
-                        </Text>
-                    </TouchableOpacity>
-                </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+                    </Animated.View>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        </View>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: '#f8fafc',
+    outerContainer: { flex: 1, backgroundColor: '#0f172a' },
+    container: { flex: 1 },
+    scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: 24 },
+    decorCircle: { position: 'absolute', borderRadius: 999 },
+
+    // Logo
+    logoSection: { alignItems: 'center', marginBottom: 32 },
+    logoBadge: { marginBottom: 16 },
+    logoGradient: {
+        width: 72, height: 72, borderRadius: 22,
+        alignItems: 'center', justifyContent: 'center',
+        shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
     },
-    scrollContainer: {
-        flexGrow: 1,
-        justifyContent: 'center',
-        padding: 24,
-    },
-    title: {
-        fontSize: 32,
-        fontWeight: '900',
-        color: '#0f172a',
-        textAlign: 'center',
-        marginBottom: 8,
-        letterSpacing: -1,
-    },
-    subtitle: {
-        fontSize: 18,
-        color: '#64748b',
-        textAlign: 'center',
-        marginBottom: 32,
-    },
-    form: {
-        backgroundColor: 'white',
-        padding: 24,
-        borderRadius: 24,
-        shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.05,
-        shadowRadius: 12,
-        elevation: 5,
+    logoEmoji: { fontSize: 36 },
+    title: { fontSize: 28, fontWeight: '900', color: 'white', letterSpacing: -0.5 },
+    subtitle: { fontSize: 16, fontWeight: '600', color: '#64748b', marginTop: 4 },
+
+    // Form
+    formCard: {
+        backgroundColor: 'rgba(255,255,255,0.06)', padding: 24, borderRadius: 24,
+        borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
     },
     label: {
-        fontSize: 14,
-        fontWeight: '700',
-        color: '#334155',
-        marginBottom: 8,
-        textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        fontSize: 11, fontWeight: '800', color: '#94a3b8',
+        marginBottom: 8, marginTop: 16, textTransform: 'uppercase', letterSpacing: 1,
     },
+    inputWrap: {
+        flexDirection: 'row', alignItems: 'center', gap: 10,
+        backgroundColor: 'rgba(255,255,255,0.06)', borderRadius: 14,
+        paddingHorizontal: 14, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
+    },
+    inputIcon: { fontSize: 16 },
     input: {
-        backgroundColor: '#f1f5f9',
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 20,
-        fontSize: 16,
-        color: '#0f172a',
-        borderWidth: 1,
-        borderColor: '#e2e8f0',
+        flex: 1, paddingVertical: 16,
+        fontSize: 16, color: 'white', fontWeight: '600',
     },
-    button: {
-        backgroundColor: '#059669',
-        padding: 18,
-        borderRadius: 16,
-        alignItems: 'center',
-        marginTop: 12,
-        shadowColor: "#059669",
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
-    },
-    buttonText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 16,
-        textTransform: 'uppercase',
-        letterSpacing: 1,
-    },
-    toggleButton: {
-        marginTop: 20,
-        alignItems: 'center',
-    },
-    toggleText: {
-        color: '#059669',
-        fontWeight: '600',
-    },
-    roleContainer: {
-        flexDirection: 'row',
-        gap: 12,
-        marginBottom: 20,
-    },
+    roleContainer: { flexDirection: 'row', gap: 12 },
     roleButton: {
-        flex: 1,
-        padding: 12,
-        borderRadius: 12,
-        borderWidth: 2,
-        borderColor: '#e2e8f0',
-        alignItems: 'center',
+        flex: 1, padding: 14, borderRadius: 14,
+        borderWidth: 2, borderColor: 'rgba(255,255,255,0.1)',
+        alignItems: 'center', gap: 4, backgroundColor: 'rgba(255,255,255,0.04)',
     },
-    roleButtonActive: {
-        borderColor: '#059669',
-        backgroundColor: '#ecfdf5',
+    roleButtonActive: { borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.15)' },
+    roleEmoji: { fontSize: 22 },
+    roleText: { fontWeight: '700', color: '#64748b', fontSize: 12, textTransform: 'uppercase' },
+    roleTextActive: { color: '#60a5fa' },
+
+    submitBtn: {
+        padding: 18, borderRadius: 16, alignItems: 'center', marginTop: 24,
+        shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3, shadowRadius: 16, elevation: 6,
     },
-    roleText: {
-        fontWeight: '600',
-        color: '#64748b',
-    },
-    roleTextActive: {
-        color: '#059669',
-    },
+    submitBtnText: { color: 'white', fontWeight: '900', fontSize: 16, textTransform: 'uppercase', letterSpacing: 1 },
+
     biometricButton: {
-        marginTop: 16,
-        alignItems: 'center',
-        padding: 10,
+        marginTop: 16, alignItems: 'center', padding: 12,
+        backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14,
     },
-    biometricText: {
-        color: '#64748b',
-        fontSize: 14,
-        fontWeight: '600',
-    }
+    biometricText: { color: '#94a3b8', fontSize: 14, fontWeight: '700' },
+
+    toggleButton: { marginTop: 24, alignItems: 'center', padding: 12 },
+    toggleText: { color: '#64748b', fontWeight: '600', fontSize: 14 },
+    toggleHighlight: { color: '#60a5fa', fontWeight: '800' },
 });
 
 export default AuthScreen;

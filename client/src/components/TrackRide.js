@@ -1,7 +1,11 @@
 import React, { useState, useEffect, useRef } from "react";
 import { MessageCircle, Send, X, XCircle } from "lucide-react";
 import { io } from "socket.io-client";
-import { getRideByTicket } from "../services/api";
+import {
+  getRideByTicket,
+  verifyRideCheckoutSession,
+  downloadRideReceipt,
+} from "../services/api";
 import {
   Search, MapPin, ArrowLeft, AlertTriangle, Phone, Copy, Check,
 } from "lucide-react";
@@ -112,6 +116,7 @@ const TrackRide = () => {
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  const [verifyingPayment, setVerifyingPayment] = useState(false);
 
   const copyToClipboard = () => {
     if (ride?.ticketId) {
@@ -134,10 +139,24 @@ const TrackRide = () => {
 
   useEffect(() => {
     const urlId = searchParams.get("ticketId");
+    const checkoutSessionId = searchParams.get("checkoutSessionId");
     if (urlId) {
       setTicketId(urlId);
       setLoading(true);
-      fetchRideStatus(urlId).finally(() => setLoading(false));
+      const verifyAndFetch = async () => {
+        if (checkoutSessionId) {
+          setVerifyingPayment(true);
+          try {
+            await verifyRideCheckoutSession(checkoutSessionId, urlId);
+          } catch (e) {
+            console.error("Payment verification failed:", e);
+          } finally {
+            setVerifyingPayment(false);
+          }
+        }
+        await fetchRideStatus(urlId);
+      };
+      verifyAndFetch().finally(() => setLoading(false));
     }
   }, [searchParams]);
 
@@ -157,6 +176,20 @@ const TrackRide = () => {
   const theme = ride?.status
     ? STATUS_THEME[ride.status] || DEFAULT_THEME
     : DEFAULT_THEME;
+
+  const handleReceiptDownload = async () => {
+    try {
+      const blob = await downloadRideReceipt(ride.ticketId);
+      const url = window.URL.createObjectURL(new Blob([blob], { type: "text/plain" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${ride.ticketId}-receipt.txt`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      setError("Receipt is not ready yet. Please try again.");
+    }
+  };
 
   return (
     <motion.div
@@ -268,8 +301,19 @@ const TrackRide = () => {
                   <div className="text-right">
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Fare</p>
                     <p className="text-2xl font-black text-slate-900">${ride.fare.toFixed(2)}</p>
+                    <p className={`text-[10px] font-bold mt-1 ${ride.paymentStatus === "Paid" ? "text-emerald-600" : "text-amber-600"}`}>
+                      Payment: {ride.paymentStatus || "Pending"} ({ride.paymentMethod || "Cash"})
+                    </p>
                   </div>
                 </div>
+
+                {(verifyingPayment || searchParams.get("paymentCancelled") === "true") && (
+                  <div className={`mb-4 p-3 rounded-xl text-xs font-bold ${verifyingPayment ? "bg-blue-50 text-blue-700" : "bg-amber-50 text-amber-700"}`}>
+                    {verifyingPayment
+                      ? "Verifying payment with Stripe..."
+                      : "Payment was cancelled. You can try again from booking."}
+                  </div>
+                )}
 
                 {/* QR Code – shown when ride is active */}
                 {(ride.status === "Confirmed" || ride.status === "En-Route") && (
@@ -319,6 +363,17 @@ const TrackRide = () => {
 
                 {/* Actions */}
                 <div className="mt-8 grid gap-3">
+                  {ride.paymentStatus === "Paid" && (
+                    <motion.button
+                      whileHover={{ scale: 1.02 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={handleReceiptDownload}
+                      className="w-full py-4 bg-emerald-50 text-emerald-700 font-black rounded-xl hover:bg-emerald-100 transition-colors flex items-center justify-center gap-2 uppercase text-xs tracking-wider"
+                    >
+                      Download Receipt
+                    </motion.button>
+                  )}
+
                   <motion.button
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.97 }}

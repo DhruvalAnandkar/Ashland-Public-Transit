@@ -10,6 +10,35 @@ const { protect } = require("../middleware/authMiddleware");
 const rideController = require("../controllers/rideController");
 const SocketService = require("../services/SocketService");
 const AuditLog = require("../models/AuditLog");
+const Stripe = require("stripe");
+
+const stripe = process.env.STRIPE_SECRET_KEY
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
+const canUseMockPayments =
+  process.env.ENABLE_MOCK_PAYMENTS === "true" || !process.env.STRIPE_SECRET_KEY;
+
+const generateReceiptNumber = (rideId) =>
+  `ASH-REC-${String(rideId).slice(-6).toUpperCase()}-${Date.now()
+    .toString()
+    .slice(-5)}`;
+
+const requireDispatcherOrAdmin = async (req, res, next) => {
+  try {
+    const currentUser = await User.findById(req.user.id).select("role username");
+    if (!currentUser) {
+      return res.status(401).json({ message: "User not found" });
+    }
+    if (!["Dispatcher", "Admin"].includes(currentUser.role)) {
+      return res.status(403).json({ message: "Dispatcher/Admin access only" });
+    }
+    req.currentUser = currentUser;
+    next();
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
 
 /**
  * @route   GET /api/rides/my-rides
@@ -102,6 +131,55 @@ const seedTicketIds = async () => {
 };
 seedTicketIds();
 
+const markRidePaid = async (ride, source = "Stripe Checkout") => {
+  if (!ride || ride.paymentStatus === "Paid") {
+    return ride;
+  }
+
+  const receiptNumber = generateReceiptNumber(ride._id);
+  ride.paymentStatus = "Paid";
+  ride.paymentMethod = "Stripe";
+  ride.paidAt = new Date();
+  ride.paymentReceiptNumber = receiptNumber;
+  ride.paymentReceiptUrl = `/api/rides/track/${ride.ticketId}/receipt`;
+  ride.logs.push({
+    user: "System",
+    action: "Payment Completed",
+    details: `${source} marked payment as Paid.`,
+  });
+  ride.notifications.push({
+    audience: "Rider",
+    message: `Payment successful for ticket ${ride.ticketId}. Receipt ${receiptNumber} is ready.`,
+  });
+  ride.notifications.push({
+    audience: "Dispatcher",
+    message: `Payment successful for ${ride.ticketId}. Dispatcher can review rider/driver context.`,
+  });
+
+  await ride.save();
+
+  await AuditLog.create({
+    action: "PAYMENT_SUCCESS",
+    performedBy: "System",
+    targetId: ride._id,
+    targetModel: "Ride",
+    changes: { paymentStatus: "Paid", method: "Stripe" },
+    metadata: `Ticket ${ride.ticketId}`,
+  });
+
+  SocketService.emitRideUpdate(ride);
+  SocketService.emitDispatcherAlert({
+    type: "PAYMENT_SUCCESS",
+    severity: "info",
+    ticketId: ride.ticketId,
+    rideId: ride._id,
+    message: `Payment completed for ${ride.passengerName} (${ride.ticketId}).`,
+    timestamp: Date.now(),
+  });
+
+  return ride;
+};
+
 /**
  * @route   GET /api/rides/check-capacity
  * @desc    DYNAMIC Resource-Based Fleet Logic
@@ -186,6 +264,7 @@ router.post("/", async (req, res) => {
       isOutOfTown,
       mileage,
       scheduledTime,
+      paymentMethod,
     } = req.body;
 
     if (
@@ -243,51 +322,51 @@ router.post("/", async (req, res) => {
       .toUpperCase();
     const ticketId = `ASH-${randomChars}`;
 
-    const session = await mongoose.startSession();
-    try {
-      session.startTransaction();
+    const newRide = new Ride({
+      passengerName,
+      phoneNumber,
+      pickup,
+      pickupDetails,
+      pickupCoordinates,
+      dropoff,
+      dropoffCoordinates,
+      userType,
+      isSameDay,
+      passengers,
+      isOutOfTown,
+      mileage,
+      fare: officialFare,
+      scheduledTime: bookingDate,
+      riderId: req.body.riderId,
+      status: initialStatus,
+      ticketId: ticketId,
+      paymentMethod:
+        paymentMethod && ["Cash", "Digital Pass", "Account", "Stripe"].includes(paymentMethod)
+          ? paymentMethod
+          : "Cash",
+      paymentStatus: paymentMethod === "Stripe" ? "Pending" : "Pending",
+      logs: [
+        {
+          user: "System",
+          action: "Ride Requested",
+          details: `Via Mobile App. Initial Status: ${initialStatus}`,
+        },
+      ],
+      notifications: [
+        {
+          audience: "Dispatcher",
+          message: `New ride request ${ticketId} created for ${passengerName}.`,
+        },
+      ],
+    });
 
-      const newRide = new Ride({
-        passengerName,
-        phoneNumber,
-        pickup,
-        pickupDetails,
-        pickupCoordinates,
-        dropoff,
-        dropoffCoordinates,
-        userType,
-        isSameDay,
-        passengers,
-        isOutOfTown,
-        mileage,
-        fare: officialFare,
-        scheduledTime: bookingDate,
-        riderId: req.body.riderId,
-        status: initialStatus,
-        ticketId: ticketId,
-        logs: [
-          {
-            user: "System",
-            action: "Ride Requested",
-            details: `Via Web Portal. Initial Status: ${initialStatus}`,
-          },
-        ],
-      });
+    await newRide.save();
 
-      await newRide.save({ session });
-      await session.commitTransaction();
-
-      res.status(201).json(newRide);
-      SocketService.emitRideUpdate(newRide);
-    } catch (error) {
-      await session.abortTransaction();
-      throw error;
-    } finally {
-      session.endSession();
-    }
+    res.status(201).json(newRide);
+    SocketService.emitRideUpdate(newRide);
   } catch (err) {
     console.error("Booking Error:", err);
-    res.status(500).json({ message: "Server Error during booking." });
+    res.status(500).json({ message: err.message || "Server Error during booking." });
   }
 });
 
@@ -419,6 +498,299 @@ router.get("/vehicles", async (req, res) => {
 });
 
 /**
+ * @route   GET /api/rides/payments/expo-return
+ * @desc    Stripe redirects here (HTTPS/HTTP). Page immediately jumps to the Expo deep link so
+ *          in-app browsers return to the app (raw exp:// 302 from Stripe is often blocked).
+ */
+router.get("/payments/expo-return", (req, res) => {
+  try {
+    const expoRaw = req.query.expo;
+    const expoParam =
+      typeof expoRaw === "string"
+        ? expoRaw
+        : Array.isArray(expoRaw)
+          ? expoRaw[0]
+          : "";
+    const { ticketId, session_id, status } = req.query;
+    if (!expoParam || typeof expoParam !== "string") {
+      return res.status(400).send("Missing expo redirect.");
+    }
+    let expoBase;
+    try {
+      expoBase = decodeURIComponent(expoParam);
+    } catch {
+      return res.status(400).send("Invalid expo redirect.");
+    }
+    // Expo Linking.createURL uses one slash (exp:/host/...) not always exp:// — accept both.
+    if (!/^(exp|exps|mobile):\/{1,2}/i.test(expoBase)) {
+      return res.status(400).send("Invalid expo scheme.");
+    }
+
+    const tid = String(ticketId || "");
+    const tidq = encodeURIComponent(tid);
+    const join = expoBase.includes("?") ? "&" : "?";
+
+    let target;
+    if (String(status || "") === "cancel") {
+      target = `${expoBase}${join}status=cancel&ticketId=${tidq}`;
+    } else {
+      const sid = String(session_id || "");
+      const sidq = encodeURIComponent(sid);
+      target = `${expoBase}${join}status=success&ticketId=${tidq}&session_id=${sidq}`;
+    }
+
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store");
+    res.send(`<!DOCTYPE html><html><head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Return to app</title></head><body style="font-family:system-ui;text-align:center;padding:24px">
+<p style="color:#334155;font-weight:600">Opening Ashland Transit…</p>
+<p style="color:#64748b;font-size:15px;margin:16px 0">If the app does not open, tap below.</p>
+<p><a id="open" href=${JSON.stringify(
+      target,
+    )} style="display:inline-block;padding:14px 22px;background:#0f172a;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">Open app</a></p>
+<script>(function(){
+var t=${JSON.stringify(target)};
+try{location.replace(t);}catch(e){}
+setTimeout(function(){try{location.href=t;}catch(e2){}},250);
+})();</script>
+</body></html>`);
+  } catch (err) {
+    res.status(500).send("Return URL error.");
+  }
+});
+
+/**
+ * @route   GET /api/rides/payments/success
+ * @desc    Stripe redirects here after successful payment. Serves a self-closing HTML page.
+ */
+router.get("/payments/success", async (req, res) => {
+  const { session_id, ticketId } = req.query;
+
+  if (session_id) {
+    try {
+      const ride = await Ride.findOne({
+        $or: [
+          { stripeCheckoutSessionId: session_id },
+          ...(ticketId ? [{ ticketId }] : []),
+        ],
+      });
+      if (ride) {
+        if (!stripe && canUseMockPayments) {
+          await markRidePaid(ride, "Mock Redirect Verification");
+        } else if (stripe) {
+          const stripeSession = await stripe.checkout.sessions.retrieve(session_id);
+          if (stripeSession.payment_status === "paid") {
+            ride.stripePaymentIntentId = String(stripeSession.payment_intent || "");
+            await markRidePaid(ride, "Stripe Redirect Verification");
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Payment success verification error:", err.message);
+    }
+  }
+
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Successful</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f0fdf4}
+.card{background:#fff;border-radius:24px;padding:48px 32px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.1);max-width:380px;width:90%}
+.icon{font-size:64px;margin-bottom:16px}.title{font-size:24px;font-weight:900;color:#059669;margin-bottom:8px}.sub{font-size:14px;color:#64748b;font-weight:600;line-height:1.5}
+.hint{margin-top:20px;font-size:12px;color:#94a3b8;font-weight:600}</style></head>
+<body><div class="card"><div class="icon">&#10003;</div><div class="title">Payment Successful!</div>
+<div class="sub">Your ride has been paid. You can close this window and return to the app.</div>
+<div class="hint">This window will close automatically...</div></div>
+<script>setTimeout(function(){try{window.close()}catch(e){}},2500);</script></body></html>`);
+});
+
+/**
+ * @route   GET /api/rides/payments/cancel
+ * @desc    Stripe redirects here when user cancels payment.
+ */
+router.get("/payments/cancel", (req, res) => {
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Payment Cancelled</title>
+<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#fef2f2}
+.card{background:#fff;border-radius:24px;padding:48px 32px;text-align:center;box-shadow:0 8px 30px rgba(0,0,0,.1);max-width:380px;width:90%}
+.icon{font-size:64px;margin-bottom:16px}.title{font-size:24px;font-weight:900;color:#dc2626;margin-bottom:8px}.sub{font-size:14px;color:#64748b;font-weight:600;line-height:1.5}
+.hint{margin-top:20px;font-size:12px;color:#94a3b8;font-weight:600}</style></head>
+<body><div class="card"><div class="icon">&#10007;</div><div class="title">Payment Cancelled</div>
+<div class="sub">No charge was made. You can close this window and try again from the app.</div>
+<div class="hint">This window will close automatically...</div></div>
+<script>setTimeout(function(){try{window.close()}catch(e){}},2500);</script></body></html>`);
+});
+
+/**
+ * @route   POST /api/rides/:id/payments/checkout-session
+ * @desc    Create Stripe checkout session or mock payment
+ */
+router.post("/:id/payments/checkout-session", async (req, res) => {
+  try {
+    const { successUrl, cancelUrl, source } = req.body || {};
+    const ride = await Ride.findById(req.params.id);
+    if (!ride) return res.status(404).json({ message: "Ride not found" });
+
+    if (ride.paymentStatus === "Paid") {
+      return res.json({
+        alreadyPaid: true,
+        ride,
+        message: "Ride is already paid.",
+      });
+    }
+
+    if (!stripe && canUseMockPayments) {
+      ride.stripeCheckoutSessionId = `mock_session_${ride._id}`;
+      await ride.save();
+      const paidRide = await markRidePaid(ride, "Mock Checkout");
+      return res.json({
+        mockPaid: true,
+        ride: paidRide,
+        message: "Mock payment completed. Add Stripe keys to switch to live payments.",
+      });
+    }
+
+    if (!stripe) {
+      return res.status(500).json({
+        message:
+          "Stripe is not configured. Add STRIPE_SECRET_KEY or enable mock payments.",
+      });
+    }
+
+    const serverOrigin = `${req.protocol}://${req.get("host")}`;
+    const encodedTicket = encodeURIComponent(ride.ticketId);
+
+    const defaultSuccessUrl = source === "web"
+      ? `http://localhost:3000/track?ticketId=${encodedTicket}&checkoutSessionId={CHECKOUT_SESSION_ID}`
+      : `${serverOrigin}/api/rides/payments/success?session_id={CHECKOUT_SESSION_ID}&ticketId=${encodedTicket}`;
+
+    const defaultCancelUrl = source === "web"
+      ? `http://localhost:3000/track?ticketId=${encodedTicket}&paymentCancelled=true`
+      : `${serverOrigin}/api/rides/payments/cancel?ticketId=${encodedTicket}`;
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      success_url: successUrl || defaultSuccessUrl,
+      cancel_url: cancelUrl || defaultCancelUrl,
+      metadata: {
+        rideId: String(ride._id),
+        ticketId: ride.ticketId || "",
+      },
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            product_data: {
+              name: `Ashland Transit Ride ${ride.ticketId || ""}`.trim(),
+              description: `${ride.pickup} -> ${ride.dropoff}`,
+            },
+            unit_amount: Math.round(Number(ride.fare || 0) * 100),
+          },
+        },
+      ],
+    });
+
+    ride.paymentMethod = "Stripe";
+    ride.paymentStatus = "Pending";
+    ride.stripeCheckoutSessionId = session.id;
+    ride.logs.push({
+      user: "System",
+      action: "Stripe Checkout Started",
+      details: `Checkout Session ${session.id}`,
+    });
+    await ride.save();
+
+    res.json({ url: session.url, sessionId: session.id });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   GET /api/rides/payments/verify-session
+ * @desc    Verify Stripe checkout success and persist payment
+ */
+router.get("/payments/verify-session", async (req, res) => {
+  try {
+    const { sessionId, ticketId } = req.query;
+    if (!sessionId) {
+      return res.status(400).json({ message: "sessionId is required" });
+    }
+
+    const ride = await Ride.findOne({
+      $or: [{ stripeCheckoutSessionId: sessionId }, ...(ticketId ? [{ ticketId }] : [])],
+    });
+    if (!ride) return res.status(404).json({ message: "Ride not found for session" });
+
+    if (!stripe && canUseMockPayments) {
+      const paidRide = await markRidePaid(ride, "Mock Session Verification");
+      return res.json({ verified: true, ride: paidRide, mock: true });
+    }
+
+    if (!stripe) {
+      return res.status(500).json({ message: "Stripe is not configured on server." });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+    if (session.payment_status !== "paid") {
+      return res.json({
+        verified: false,
+        paymentStatus: session.payment_status,
+        ride,
+      });
+    }
+
+    ride.stripePaymentIntentId = String(session.payment_intent || "");
+    const paidRide = await markRidePaid(ride, "Stripe Session Verification");
+    res.json({ verified: true, ride: paidRide });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   GET /api/rides/track/:ticketId/receipt
+ * @desc    Download plain-text receipt for paid rides
+ */
+router.get("/track/:ticketId/receipt", async (req, res) => {
+  try {
+    const ride = await Ride.findOne({ ticketId: req.params.ticketId });
+    if (!ride) return res.status(404).json({ message: "Ticket not found" });
+    if (ride.paymentStatus !== "Paid") {
+      return res.status(400).json({ message: "Receipt available only after payment success." });
+    }
+
+    const receiptText = [
+      "Ashland Public Transit Receipt",
+      "------------------------------------",
+      `Receipt #: ${ride.paymentReceiptNumber || "N/A"}`,
+      `Ticket: ${ride.ticketId}`,
+      `Passenger: ${ride.passengerName}`,
+      `Pickup: ${ride.pickup}`,
+      `Dropoff: ${ride.dropoff}`,
+      `Amount Paid: $${Number(ride.fare || 0).toFixed(2)}`,
+      `Payment Method: ${ride.paymentMethod || "Stripe"}`,
+      `Paid At: ${ride.paidAt ? new Date(ride.paidAt).toLocaleString() : "N/A"}`,
+      "Status: Payment Successful",
+    ].join("\n");
+
+    res.setHeader("Content-Type", "text/plain");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${ride.ticketId || "receipt"}.txt"`,
+    );
+    return res.send(receiptText);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
  * @route   GET /api/rides/:id
  * @desc    Get single ride details by ID
  */
@@ -461,7 +833,7 @@ router.patch("/vehicles/:id", async (req, res) => {
 router.get("/track/:ticketId", async (req, res) => {
   try {
     const ride = await Ride.findOne({ ticketId: req.params.ticketId }).select(
-      "ticketId status passengerName pickup pickupDetails dropoff scheduledTime fare assignedVehicle userType passengers",
+      "ticketId status passengerName pickup pickupDetails dropoff scheduledTime fare assignedVehicle userType passengers paymentStatus paymentMethod paymentReceiptNumber paymentReceiptUrl paidAt notifications",
     );
 
     if (!ride) return res.status(404).json({ message: "Ticket not found" });
@@ -509,9 +881,9 @@ router.get("/fleet/drivers", protect, async (req, res) => {
         });
         const activeRide = vehicle
           ? await Ride.findOne({
-              assignedVehicle: vehicle.name,
-              status: { $in: ["Confirmed", "En-Route"] },
-            })
+            assignedVehicle: vehicle.name,
+            status: { $in: ["Confirmed", "En-Route"] },
+          })
           : null;
 
         return {
@@ -530,25 +902,25 @@ router.get("/fleet/drivers", protect, async (req, res) => {
           tags: driver.tags || [],
           assignedVehicle: vehicle
             ? {
-                _id: vehicle._id,
-                name: vehicle.name,
-                type: vehicle.type,
-                licensePlate: vehicle.licensePlate || "",
-                capacity: vehicle.capacity,
-              }
+              _id: vehicle._id,
+              name: vehicle.name,
+              type: vehicle.type,
+              licensePlate: vehicle.licensePlate || "",
+              capacity: vehicle.capacity,
+            }
             : null,
           activeRide: activeRide
             ? {
-                _id: activeRide._id,
-                ticketId: activeRide.ticketId,
-                status: activeRide.status,
-                passengerName: activeRide.passengerName,
-                pickup: activeRide.pickup,
-                dropoff: activeRide.dropoff,
-                scheduledTime: activeRide.scheduledTime,
-                passengers: activeRide.passengers,
-                fare: activeRide.fare,
-              }
+              _id: activeRide._id,
+              ticketId: activeRide.ticketId,
+              status: activeRide.status,
+              passengerName: activeRide.passengerName,
+              pickup: activeRide.pickup,
+              dropoff: activeRide.dropoff,
+              scheduledTime: activeRide.scheduledTime,
+              passengers: activeRide.passengers,
+              fare: activeRide.fare,
+            }
             : null,
         };
       }),
@@ -560,6 +932,60 @@ router.get("/fleet/drivers", protect, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+/**
+ * @route   PATCH /api/rides/fleet/drivers/:id
+ * @desc    Dispatcher edits driver profile and moderation tags
+ * @access  Protected (Dispatcher/Admin)
+ */
+router.patch(
+  "/fleet/drivers/:id",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { fullName, phoneNumber, licenseNumber, tags, isSuspended, status } =
+        req.body;
+
+      const updates = {};
+      if (fullName !== undefined) updates.fullName = fullName;
+      if (phoneNumber !== undefined) updates.phoneNumber = phoneNumber;
+      if (licenseNumber !== undefined) updates.licenseNumber = licenseNumber;
+      if (Array.isArray(tags)) updates.tags = tags;
+      if (isSuspended !== undefined) updates.isSuspended = !!isSuspended;
+      if (status !== undefined) updates.status = status;
+
+      const driver = await User.findOneAndUpdate(
+        { _id: req.params.id, role: { $regex: /^driver$/i } },
+        { $set: updates },
+        { new: true },
+      ).select("-password");
+
+      if (!driver) return res.status(404).json({ message: "Driver not found" });
+
+      await AuditLog.create({
+        action: "DRIVER_PROFILE_UPDATED",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: driver._id,
+        targetModel: "User",
+        changes: updates,
+        metadata: "Dispatcher updated driver controls/profile",
+      });
+
+      SocketService.emitDispatcherAlert({
+        type: "DRIVER_UPDATED",
+        severity: "info",
+        driverId: driver._id,
+        message: `Driver profile updated for ${driver.username}.`,
+        timestamp: Date.now(),
+      });
+
+      res.json(driver);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
 
 /**
  * @route   GET /api/rides/fleet/active-rides
@@ -612,9 +1038,9 @@ router.post("/fleet/driver-location", protect, async (req, res) => {
 
     const activeRide = driverVehicle
       ? await Ride.findOne({
-          assignedVehicle: driverVehicle.name,
-          status: { $in: ["Confirmed", "En-Route"] },
-        }).select("_id riderId")
+        assignedVehicle: driverVehicle.name,
+        status: { $in: ["Confirmed", "En-Route"] },
+      }).select("_id riderId")
       : null;
 
     if (activeRide?._id) {
@@ -636,5 +1062,83 @@ router.post("/fleet/driver-location", protect, async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 });
+
+/**
+ * @route   GET /api/rides/dispatcher/operations-snapshot
+ * @desc    Unified operations visibility for dispatcher control center
+ * @access  Protected (Dispatcher/Admin)
+ */
+router.get(
+  "/dispatcher/operations-snapshot",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const [rides, drivers, riders] = await Promise.all([
+        Ride.find().sort({ scheduledTime: -1 }).limit(300),
+        User.find({ role: { $regex: /^driver$/i } }).select("-password"),
+        User.find({ role: { $regex: /^rider$/i } }).select("-password"),
+      ]);
+
+      res.json({
+        rides,
+        drivers,
+        riders,
+        fetchedAt: new Date(),
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   PATCH /api/rides/dispatcher/users/:id/control
+ * @desc    Dispatcher moderation controls for rider/driver accounts
+ * @access  Protected (Dispatcher/Admin)
+ */
+router.patch(
+  "/dispatcher/users/:id/control",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { isSuspended, tags, status } = req.body;
+      const updates = {};
+      if (isSuspended !== undefined) updates.isSuspended = !!isSuspended;
+      if (Array.isArray(tags)) updates.tags = tags;
+      if (status !== undefined) updates.status = status;
+
+      const targetUser = await User.findByIdAndUpdate(
+        req.params.id,
+        { $set: updates },
+        { new: true },
+      ).select("-password");
+
+      if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+      await AuditLog.create({
+        action: "DISPATCHER_USER_CONTROL",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: targetUser._id,
+        targetModel: "User",
+        changes: updates,
+        metadata: `Role: ${targetUser.role}`,
+      });
+
+      SocketService.emitDispatcherAlert({
+        type: "USER_CONTROL_APPLIED",
+        severity: "warning",
+        userId: targetUser._id,
+        message: `Dispatcher updated controls for ${targetUser.username}.`,
+        timestamp: Date.now(),
+      });
+
+      res.json(targetUser);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
 
 module.exports = router;

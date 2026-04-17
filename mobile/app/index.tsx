@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { logout, checkSession } from '../services/api';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { useRouter } from 'expo-router';
+import api, { logout, checkSession, verifyRideCheckoutSession } from '../services/api';
 import AuthScreen from '../screens/AuthScreen';
 import RiderHomeScreen from '../screens/RiderHomeScreen';
 import RiderBookingScreen from '../screens/RiderBookingScreen';
 import RiderTrackingScreen from '../screens/RiderTrackingScreen';
 import RiderRidesScreen from '../screens/RiderRidesScreen';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function Index() {
     const [user, setUser] = useState(null);
@@ -13,6 +18,93 @@ export default function Index() {
     const [currentRide, setCurrentRide] = useState(null);
     const [currentParams, setCurrentParams] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const router = useRouter();
+    const stripeUrlHandledRef = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!user || isLoading) return;
+
+        const goToTracking = async (sessionId: string, ticketId: string) => {
+            try {
+                const data = await verifyRideCheckoutSession(sessionId, ticketId);
+                let ride = data?.ride;
+                if (!ride) {
+                    const res = await api.get(`/rides/track/${encodeURIComponent(ticketId)}`);
+                    ride = res.data;
+                }
+                if (ride) {
+                    setCurrentRide(ride);
+                    setCurrentScreen('TICKET');
+                }
+            } catch {
+                try {
+                    const res = await api.get(`/rides/track/${encodeURIComponent(ticketId)}`);
+                    if (res.data) {
+                        setCurrentRide(res.data);
+                        setCurrentScreen('TICKET');
+                    }
+                } catch {
+                    // ignore
+                }
+            }
+            setTimeout(() => {
+                try {
+                    router.replace('/');
+                } catch {
+                    // ignore
+                }
+            }, 150);
+        };
+
+        const handleIncomingUrl = (incomingUrl: string) => {
+            if (!incomingUrl) return;
+            if (stripeUrlHandledRef.current === incomingUrl) return;
+
+            let parsed: Linking.ParsedURL;
+            try {
+                parsed = Linking.parse(incomingUrl);
+            } catch {
+                return;
+            }
+
+            const qs = parsed.queryParams || {};
+            const rawSt = qs.status;
+            const rawTi = qs.ticketId;
+            const rawSe = qs.session_id;
+            const status = Array.isArray(rawSt) ? rawSt[0] : rawSt;
+            const ticketId = Array.isArray(rawTi) ? rawTi[0] : rawTi;
+            const sessionId = rawSe ? (Array.isArray(rawSe) ? rawSe[0] : rawSe) : '';
+
+            if (!status || !ticketId) return;
+
+            if (status === 'cancel') {
+                stripeUrlHandledRef.current = incomingUrl;
+                try {
+                    router.replace('/');
+                } catch {
+                    // ignore
+                }
+                return;
+            }
+
+            if (status !== 'success' || !sessionId) return;
+
+            stripeUrlHandledRef.current = incomingUrl;
+            void goToTracking(sessionId, ticketId);
+        };
+
+        void Linking.getInitialURL().then((u) => {
+            if (u) handleIncomingUrl(u);
+        });
+
+        const sub = Linking.addEventListener('url', ({ url }) => {
+            handleIncomingUrl(url);
+        });
+
+        return () => {
+            sub.remove();
+        };
+    }, [user, isLoading, router]);
 
     // Session Restoration
     React.useEffect(() => {

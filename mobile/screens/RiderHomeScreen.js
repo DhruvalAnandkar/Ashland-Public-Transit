@@ -1,40 +1,188 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    Alert, Modal, StatusBar,
+    Alert, Modal, StatusBar, Dimensions, Platform, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+    FadeInDown, FadeInUp, FadeIn,
+    useSharedValue, useAnimatedStyle, withSpring, withRepeat,
+    withTiming, withDelay, withSequence, Easing,
+} from 'react-native-reanimated';
 import { getRideHistory } from '../services/api';
 
-const ASHLAND = { latitude: 40.8688, longitude: -82.3179, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+const { width } = Dimensions.get('window');
+const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 const STATUS_COLORS = {
-    Completed: { bg: '#dcfce7', text: '#166534', dot: '#22c55e' },
-    Cancelled: { bg: '#fee2e2', text: '#991b1b', dot: '#ef4444' },
-    Pending: { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b' },
-    'Pending Review': { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b' },
-    'En-Route': { bg: '#dbeafe', text: '#1e40af', dot: '#3b82f6' },
-    Confirmed: { bg: '#d1fae5', text: '#065f46', dot: '#10b981' },
-    Rejected: { bg: '#f1f5f9', text: '#475569', dot: '#94a3b8' },
+    Completed: { bg: '#dcfce7', text: '#166534', dot: '#22c55e', stripe: '#22c55e' },
+    Cancelled: { bg: '#fee2e2', text: '#991b1b', dot: '#ef4444', stripe: '#ef4444' },
+    Pending: { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b', stripe: '#f59e0b' },
+    'Pending Review': { bg: '#fef3c7', text: '#92400e', dot: '#f59e0b', stripe: '#f59e0b' },
+    'En-Route': { bg: '#dbeafe', text: '#1e40af', dot: '#3b82f6', stripe: '#3b82f6' },
+    Confirmed: { bg: '#d1fae5', text: '#065f46', dot: '#10b981', stripe: '#10b981' },
+    Rejected: { bg: '#f1f5f9', text: '#475569', dot: '#94a3b8', stripe: '#94a3b8' },
 };
 
-const SkeletonCard = () => (
-    <View style={styles.skeletonCard}>
-        <View style={styles.skeletonLine} />
-        <View style={[styles.skeletonLine, { width: '60%', marginTop: 8 }]} />
-        <View style={[styles.skeletonLine, { width: '40%', marginTop: 8 }]} />
-    </View>
-);
+/* ─── SKELETON LOADER ─────────────────────────────────────────────── */
+const SkeletonCard = () => {
+    const opacity = useSharedValue(0.3);
+    useEffect(() => {
+        opacity.value = withRepeat(withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
+    }, []);
+    const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
+    return (
+        <Animated.View style={[styles.skeletonCard, animStyle]}>
+            <View style={styles.skeletonLine} />
+            <View style={[styles.skeletonLine, { width: '60%', marginTop: 8 }]} />
+            <View style={[styles.skeletonLine, { width: '40%', marginTop: 8 }]} />
+        </Animated.View>
+    );
+};
 
+/* ─── ACTION CHIP ─────────────────────────────────────────────────── */
+const ActionChip = ({ emoji, label, colors, onPress, delay = 0 }) => {
+    const scale = useSharedValue(1);
+    const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+    const handlePress = () => {
+        scale.value = withSequence(
+            withSpring(0.88, { damping: 10, stiffness: 400 }),
+            withSpring(1, { damping: 8, stiffness: 300 })
+        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress?.();
+    };
+    return (
+        <Animated.View entering={FadeInDown.delay(delay).springify()} style={styles.chipWrapper}>
+            <AnimatedTouchable style={animStyle} onPress={handlePress} activeOpacity={1}>
+                <LinearGradient colors={colors} style={styles.chip} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                    <Text style={styles.chipEmoji}>{emoji}</Text>
+                    <Text style={styles.chipLabel}>{label}</Text>
+                </LinearGradient>
+            </AnimatedTouchable>
+        </Animated.View>
+    );
+};
+
+/* ─── BOOK BUTTON ─────────────────────────────────────────────────── */
+const BookButton = ({ onPress }) => {
+    const shimmer = useSharedValue(0);
+    const scale = useSharedValue(1);
+    useEffect(() => {
+        shimmer.value = withRepeat(
+            withTiming(1, { duration: 2500, easing: Easing.inOut(Easing.ease) }), -1, true
+        );
+    }, []);
+    const shimmerStyle = useAnimatedStyle(() => ({
+        opacity: 0.15 + shimmer.value * 0.12,
+    }));
+    const scaleStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: scale.value }],
+    }));
+    const handlePress = () => {
+        scale.value = withSequence(
+            withSpring(0.95, { damping: 12, stiffness: 400 }),
+            withSpring(1, { damping: 8, stiffness: 300 })
+        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        onPress?.();
+    };
+    return (
+        <Animated.View entering={FadeInDown.delay(350).springify()}>
+            <AnimatedTouchable onPress={handlePress} activeOpacity={1} style={scaleStyle}>
+                <LinearGradient
+                    colors={['#059669', '#047857', '#065f46']}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={styles.bookButton}
+                >
+                    <Animated.View style={[StyleSheet.absoluteFillObject, shimmerStyle, { backgroundColor: 'white', borderRadius: 18 }]} />
+                    <Text style={styles.bookButtonText}>🚐  Book a Ride Now</Text>
+                    <Text style={styles.bookSubtext}>On-demand transit across Ashland</Text>
+                </LinearGradient>
+            </AnimatedTouchable>
+        </Animated.View>
+    );
+};
+
+/* ─── RIDE CARD ───────────────────────────────────────────────────── */
+const RideCard = ({ item, index, onPress, onViewTicket }) => {
+    const theme = STATUS_COLORS[item.status] || STATUS_COLORS.Rejected;
+    const scale = useSharedValue(1);
+    const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
+    const handlePress = () => {
+        scale.value = withSequence(
+            withSpring(0.97, { damping: 12, stiffness: 400 }),
+            withSpring(1, { damping: 8, stiffness: 300 })
+        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPress?.();
+    };
+    return (
+        <Animated.View entering={FadeInDown.delay(100 + index * 80).springify()}>
+            <AnimatedTouchable style={scaleStyle} onPress={handlePress} activeOpacity={1}>
+                <View style={styles.rideCard}>
+                    <View style={[styles.cardStripe, { backgroundColor: theme.stripe }]} />
+                    <View style={styles.cardContent}>
+                        {/* Header */}
+                        <View style={styles.rideHeader}>
+                            <Text style={styles.rideDate}>
+                                {new Date(item.scheduledTime).toLocaleDateString('en-US', {
+                                    month: 'short', day: 'numeric', year: 'numeric',
+                                })}
+                            </Text>
+                            <View style={[styles.statusBadge, { backgroundColor: theme.bg }]}>
+                                <View style={[styles.statusDot, { backgroundColor: theme.dot }]} />
+                                <Text style={[styles.statusText, { color: theme.text }]}>{item.status}</Text>
+                            </View>
+                        </View>
+                        {/* Route */}
+                        <View style={styles.routeBlock}>
+                            <View style={styles.routeRow}>
+                                <View style={styles.routeConnector}>
+                                    <View style={[styles.routeDot, { backgroundColor: '#22c55e' }]} />
+                                    <View style={styles.routeLineVert} />
+                                    <View style={[styles.routeDot, { backgroundColor: '#ef4444' }]} />
+                                </View>
+                                <View style={styles.routeTexts}>
+                                    <Text style={styles.routeText} numberOfLines={1}>{item.pickup}</Text>
+                                    <Text style={styles.routeText} numberOfLines={1}>{item.dropoff}</Text>
+                                </View>
+                            </View>
+                        </View>
+                        {/* Footer */}
+                        <View style={styles.rideFooter}>
+                            <View style={styles.farePill}>
+                                <Text style={styles.fareText}>${(item.fare || 0).toFixed(2)}</Text>
+                            </View>
+                            <View style={styles.rideMetaRow}>
+                                <Text style={styles.paxBadgeText}>👤 {item.passengers || 1}</Text>
+                                <TouchableOpacity
+                                    style={styles.viewTicketButton}
+                                    onPress={() => onViewTicket?.(item)}
+                                >
+                                    <Text style={styles.viewTicketText}>View Ticket →</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            </AnimatedTouchable>
+        </Animated.View>
+    );
+};
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAIN SCREEN
+   ═══════════════════════════════════════════════════════════════════════ */
 const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation }) => {
     const [rides, setRides] = useState([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
     const [selectedRide, setSelectedRide] = useState(null);
-    const [showScheduleInfo, setShowScheduleInfo] = useState(false);
     const [showHelpModal, setShowHelpModal] = useState(false);
     const [showSosModal, setShowSosModal] = useState(false);
-    const [showComingSoon, setShowComingSoon] = useState({ visible: false, emoji: '', title: '', msg: '' });
 
     const fetchHistory = useCallback(async () => {
         setLoading(true);
@@ -51,180 +199,171 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
 
     useEffect(() => { fetchHistory(); }, [fetchHistory]);
 
-    const handleRefresh = () => {
-        setRefreshing(true);
-        fetchHistory();
-    };
+    const handleRefresh = () => { setRefreshing(true); fetchHistory(); };
 
-    const openComingSoon = (emoji, title, msg) =>
-        setShowComingSoon({ visible: true, emoji, title, msg });
-
-    const renderStatusBadge = (status) => {
-        const theme = STATUS_COLORS[status] || STATUS_COLORS.Rejected;
-        return (
-            <View style={[styles.statusBadge, { backgroundColor: theme.bg }]}>
-                <View style={[styles.statusDot, { backgroundColor: theme.dot }]} />
-                <Text style={[styles.statusText, { color: theme.text }]}>{status}</Text>
-            </View>
-        );
-    };
-
-    const renderRideCard = (item) => (
-        <TouchableOpacity
-            key={item._id}
-            style={styles.rideCard}
-            activeOpacity={0.85}
-            onPress={() => setSelectedRide(item)}
-        >
-            <View style={styles.rideHeader}>
-                <Text style={styles.rideDate}>
-                    {new Date(item.scheduledTime).toLocaleDateString('en-US', {
-                        month: 'short', day: 'numeric', year: 'numeric',
-                    })}
-                </Text>
-                {renderStatusBadge(item.status)}
-            </View>
-            <View style={styles.rideRoute}>
-                <View style={styles.routeDot} />
-                <Text style={styles.routeText} numberOfLines={1}>{item.pickup}</Text>
-            </View>
-            <View style={styles.routeLine} />
-            <View style={styles.rideRoute}>
-                <View style={[styles.routeDot, { backgroundColor: '#ef4444' }]} />
-                <Text style={styles.routeText} numberOfLines={1}>{item.dropoff}</Text>
-            </View>
-            <View style={styles.rideFooter}>
-                <Text style={styles.fareText}>${(item.fare || 0).toFixed(2)}</Text>
-                <TouchableOpacity
-                    style={styles.viewTicketButton}
-                    onPress={() => onViewTicket && onViewTicket(item)}
-                >
-                    <Text style={styles.viewTicketText}>View Ticket →</Text>
-                </TouchableOpacity>
-            </View>
-        </TouchableOpacity>
-    );
+    const getInitial = () => (user?.username || 'R').charAt(0).toUpperCase();
+    const activeRides = rides.filter(r => ['Pending', 'Confirmed', 'En-Route'].includes(r.status));
+    const completedRides = rides.filter(r => r.status === 'Completed');
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+            <StatusBar barStyle="light-content" backgroundColor="#1e3a8a" />
             <ScrollView
                 style={styles.container}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
-                refreshing={refreshing}
-                onRefresh={handleRefresh}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2563eb" />
+                }
                 scrollEventThrottle={16}
             >
-                {/* Header */}
-                <View style={styles.header}>
-                    <View>
-                        <Text style={styles.greeting}>Welcome back,</Text>
-                        <Text style={styles.username}>{user?.username || 'Rider'} 👋</Text>
+                {/* ══ HEADER ════════════════════════════════════════ */}
+                <LinearGradient
+                    colors={['#1e3a8a', '#1e40af', '#2563eb']}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                    style={styles.headerGradient}
+                >
+                    <Animated.View entering={FadeInDown.delay(100).springify()}>
+                        {/* Top Row: Avatar + Name + Sign Out */}
+                        <View style={styles.headerTop}>
+                            <View style={styles.avatarContainer}>
+                                <LinearGradient colors={['#60a5fa', '#3b82f6']} style={styles.avatarGradient}>
+                                    <Text style={styles.avatarText}>{getInitial()}</Text>
+                                </LinearGradient>
+                                <View style={styles.avatarRing} />
+                            </View>
+                            <View style={styles.headerTextBlock}>
+                                <Text style={styles.greeting}>Welcome back,</Text>
+                                <Text style={styles.username}>{user?.username || 'Rider'} 👋</Text>
+                            </View>
+                            <TouchableOpacity onPress={onLogout} style={styles.logoutButton}>
+                                <Text style={styles.logoutText}>Sign Out</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Stats Row */}
+                        <View style={styles.statsRow}>
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>{activeRides.length}</Text>
+                                <Text style={styles.statLabel}>Active</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>{completedRides.length}</Text>
+                                <Text style={styles.statLabel}>Completed</Text>
+                            </View>
+                            <View style={styles.statDivider} />
+                            <View style={styles.statItem}>
+                                <Text style={styles.statNumber}>{rides.length}</Text>
+                                <Text style={styles.statLabel}>Total</Text>
+                            </View>
+                        </View>
+                    </Animated.View>
+                </LinearGradient>
+
+                {/* ══ BODY ══════════════════════════════════════════ */}
+                <View style={styles.body}>
+                    {/* ── Wallet Card ───────────────────────────────── */}
+                    <Animated.View entering={FadeInDown.delay(200).springify()} style={styles.section}>
+                        <LinearGradient
+                            colors={['#0f172a', '#1e293b', '#0f172a']}
+                            start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                            style={styles.walletCard}
+                        >
+                            <View style={styles.walletGlow} />
+                            <View style={styles.walletRow}>
+                                <View>
+                                    <Text style={styles.walletLabel}>WALLET BALANCE</Text>
+                                    <Text style={styles.walletAmount}>
+                                        ${(user?.walletBalance || 0).toFixed(2)}
+                                    </Text>
+                                </View>
+                                <View style={styles.creditsBadge}>
+                                    <Text style={styles.creditsText}>TRANSIT{'\n'}CREDITS</Text>
+                                </View>
+                            </View>
+                            <Text style={styles.walletSub}>Ashland City Transit • Prepaid</Text>
+                        </LinearGradient>
+                    </Animated.View>
+
+                    {/* ── Action Chips ──────────────────────────────── */}
+                    <View style={[styles.section, styles.chipsRow]}>
+                        <ActionChip
+                            emoji="📅" label="Schedule"
+                            colors={['#eff6ff', '#dbeafe']}
+                            delay={250}
+                            onPress={() => {
+                                if (onBookPress) onBookPress({ scheduledMode: true });
+                                else if (navigation) navigation.navigate('RiderBookingScreen', { scheduledMode: true });
+                            }}
+                        />
+                        <ActionChip
+                            emoji="🎫" label="My Rides"
+                            colors={['#f0fdf4', '#dcfce7']}
+                            delay={300}
+                            onPress={() => {
+                                if (navigation) navigation.navigate('RiderRidesScreen');
+                            }}
+                        />
+                        <ActionChip
+                            emoji="❓" label="Help"
+                            colors={['#fffbeb', '#fef3c7']}
+                            delay={350}
+                            onPress={() => setShowHelpModal(true)}
+                        />
+                        <ActionChip
+                            emoji="🆘" label="SOS"
+                            colors={['#fef2f2', '#fee2e2']}
+                            delay={400}
+                            onPress={() => setShowSosModal(true)}
+                        />
                     </View>
-                    <TouchableOpacity onPress={onLogout} style={styles.logoutButton}>
-                        <Text style={styles.logoutText}>Sign Out</Text>
-                    </TouchableOpacity>
-                </View>
 
-                {/* Wallet Card */}
-                <View style={styles.walletCard}>
-                    <Text style={styles.walletLabel}>Wallet Balance</Text>
-                    <Text style={styles.walletAmount}>
-                        ${(user?.walletBalance || 0).toFixed(2)}
-                    </Text>
-                    <Text style={styles.walletSub}>Ashland Transit Credits</Text>
-                </View>
-
-                {/* Action Chips */}
-                <View style={styles.chipsRow}>
-                    <TouchableOpacity
-                        style={[styles.chip, styles.chipSchedule]}
-                        onPress={() => {
-                            if (onBookPress) {
-                                onBookPress({ scheduledMode: true });
-                            } else if (navigation) {
-                                navigation.navigate('RiderBookingScreen', { scheduledMode: true });
-                            }
-                        }}
-                    >
-                        <Text style={styles.chipEmoji}>📅</Text>
-                        <Text style={styles.chipLabel}>Schedule</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.chip, styles.chipRides]}
-                        onPress={() => {
-                            if (navigation) {
-                                navigation.navigate('RiderRidesScreen');
-                            } else {
-                                openComingSoon('🎫', 'My Rides', 'Tap "My Rides" from the main menu.');
-                            }
-                        }}
-                    >
-                        <Text style={styles.chipEmoji}>🎫</Text>
-                        <Text style={styles.chipLabel}>My Rides</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.chip, styles.chipHelp]}
-                        onPress={() => setShowHelpModal(true)}
-                    >
-                        <Text style={styles.chipEmoji}>❓</Text>
-                        <Text style={styles.chipLabel}>Help</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.chip, styles.chipSos]}
-                        onPress={() => setShowSosModal(true)}
-                    >
-                        <Text style={styles.chipEmoji}>🆘</Text>
-                        <Text style={styles.chipLabel}>SOS</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Book Button */}
-                <View style={styles.actionContainer}>
-                    <TouchableOpacity
-                        style={styles.bookButton}
-                        onPress={() => {
+                    {/* ── Book Button ───────────────────────────────── */}
+                    <View style={styles.section}>
+                        <BookButton onPress={() => {
                             if (onBookPress) onBookPress({ scheduledMode: false });
                             else if (navigation) navigation.navigate('RiderBookingScreen', { scheduledMode: false });
-                        }}
-                        activeOpacity={0.9}
-                    >
-                        <Text style={styles.bookButtonText}>🚐  Book a Ride Now</Text>
-                    </TouchableOpacity>
-                </View>
-
-                {/* Recent Rides */}
-                <View style={styles.activityContainer}>
-                    <View style={styles.activityHeader}>
-                        <Text style={styles.sectionTitle}>Recent Activity</Text>
-                        <TouchableOpacity onPress={handleRefresh}>
-                            <Text style={styles.refreshText}>Refresh ↻</Text>
-                        </TouchableOpacity>
+                        }} />
                     </View>
 
-                    {loading ? (
-                        <>
-                            <SkeletonCard />
-                            <SkeletonCard />
-                            <SkeletonCard />
-                        </>
-                    ) : rides.length === 0 ? (
-                        <View style={styles.emptyState}>
-                            <Text style={styles.emptyEmoji}>🚌</Text>
-                            <Text style={styles.emptyTitle}>No rides yet</Text>
-                            <Text style={styles.emptyText}>Book your first ride above!</Text>
-                        </View>
-                    ) : (
-                        rides.slice(0, 10).map(renderRideCard)
-                    )}
+                    {/* ── Recent Activity ───────────────────────────── */}
+                    <View style={styles.section}>
+                        <Animated.View entering={FadeInDown.delay(400).springify()} style={styles.activityHeader}>
+                            <Text style={styles.sectionTitle}>Recent Activity</Text>
+                            <TouchableOpacity onPress={handleRefresh} style={styles.refreshBtn}>
+                                <Text style={styles.refreshText}>Refresh ↻</Text>
+                            </TouchableOpacity>
+                        </Animated.View>
+
+                        {loading ? (
+                            <>
+                                <SkeletonCard />
+                                <SkeletonCard />
+                                <SkeletonCard />
+                            </>
+                        ) : rides.length === 0 ? (
+                            <Animated.View entering={FadeIn.delay(500)} style={styles.emptyState}>
+                                <Text style={styles.emptyEmoji}>🚌</Text>
+                                <Text style={styles.emptyTitle}>No rides yet</Text>
+                                <Text style={styles.emptyText}>Book your first ride above!</Text>
+                            </Animated.View>
+                        ) : (
+                            rides.slice(0, 10).map((item, index) => (
+                                <RideCard
+                                    key={item._id}
+                                    item={item}
+                                    index={index}
+                                    onPress={() => setSelectedRide(item)}
+                                    onViewTicket={onViewTicket}
+                                />
+                            ))
+                        )}
+                    </View>
                 </View>
             </ScrollView>
 
-            {/* Ride Detail Modal */}
+            {/* ══ RIDE DETAIL MODAL ═════════════════════════════════ */}
             <Modal
                 visible={!!selectedRide}
                 transparent
@@ -246,50 +385,37 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                                     <Text style={styles.detailTicket}>
                                         🎫 {selectedRide.ticketId || 'N/A'}
                                     </Text>
-                                    {renderStatusBadge(selectedRide.status)}
+                                    <View style={[styles.statusBadge, { backgroundColor: (STATUS_COLORS[selectedRide.status] || STATUS_COLORS.Rejected).bg }]}>
+                                        <View style={[styles.statusDot, { backgroundColor: (STATUS_COLORS[selectedRide.status] || STATUS_COLORS.Rejected).dot }]} />
+                                        <Text style={[styles.statusText, { color: (STATUS_COLORS[selectedRide.status] || STATUS_COLORS.Rejected).text }]}>{selectedRide.status}</Text>
+                                    </View>
                                 </View>
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Date</Text>
-                                    <Text style={styles.detailValue}>
-                                        {new Date(selectedRide.scheduledTime).toLocaleString()}
-                                    </Text>
-                                </View>
-                                <View style={styles.detailDivider} />
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Pickup</Text>
-                                    <Text style={styles.detailValue}>{selectedRide.pickup}</Text>
-                                </View>
-                                <View style={styles.detailDivider} />
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Drop-off</Text>
-                                    <Text style={styles.detailValue}>{selectedRide.dropoff}</Text>
-                                </View>
-                                <View style={styles.detailDivider} />
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Fare</Text>
-                                    <Text style={[styles.detailValue, { color: '#059669', fontWeight: '900' }]}>
-                                        ${(selectedRide.fare || 0).toFixed(2)}
-                                    </Text>
-                                </View>
-                                <View style={styles.detailDivider} />
-                                <View style={styles.detailRow}>
-                                    <Text style={styles.detailLabel}>Passengers</Text>
-                                    <Text style={styles.detailValue}>{selectedRide.passengers || 1}</Text>
-                                </View>
-                                {selectedRide.assignedVehicle && (
-                                    <>
-                                        <View style={styles.detailDivider} />
+                                {[
+                                    ['Date', new Date(selectedRide.scheduledTime).toLocaleString()],
+                                    ['Pickup', selectedRide.pickup],
+                                    ['Drop-off', selectedRide.dropoff],
+                                    ['Fare', `$${(selectedRide.fare || 0).toFixed(2)}`],
+                                    ['Passengers', String(selectedRide.passengers || 1)],
+                                    ...(selectedRide.assignedVehicle ? [['Vehicle', selectedRide.assignedVehicle]] : []),
+                                ].map(([label, value]) => (
+                                    <React.Fragment key={label}>
                                         <View style={styles.detailRow}>
-                                            <Text style={styles.detailLabel}>Vehicle</Text>
-                                            <Text style={styles.detailValue}>{selectedRide.assignedVehicle}</Text>
+                                            <Text style={styles.detailLabel}>{label}</Text>
+                                            <Text style={[styles.detailValue, label === 'Fare' && { color: '#059669', fontWeight: '900' }]}>{value}</Text>
                                         </View>
-                                    </>
-                                )}
+                                        <View style={styles.detailDivider} />
+                                    </React.Fragment>
+                                ))}
                                 <TouchableOpacity
                                     style={styles.closeDetailBtn}
                                     onPress={() => setSelectedRide(null)}
                                 >
-                                    <Text style={styles.closeDetailText}>Close</Text>
+                                    <LinearGradient
+                                        colors={['#0f172a', '#1e293b']}
+                                        style={styles.closeDetailGradient}
+                                    >
+                                        <Text style={styles.closeDetailText}>Close</Text>
+                                    </LinearGradient>
                                 </TouchableOpacity>
                             </>
                         )}
@@ -297,10 +423,11 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                 </View>
             </Modal>
 
-            {/* Help Modal */}
+            {/* ══ HELP MODAL ═══════════════════════════════════════ */}
             <Modal visible={showHelpModal} transparent animationType="fade" onRequestClose={() => setShowHelpModal(false)}>
-                <View style={styles.modalOverlay}>
+                <View style={styles.centeredOverlay}>
                     <View style={styles.comingSoonBox}>
+                        <View style={[styles.modalAccent, { backgroundColor: '#059669' }]} />
                         <Text style={styles.csEmoji}>❓</Text>
                         <Text style={styles.csTitle}>Help Center</Text>
                         <Text style={styles.csMsg}>
@@ -309,16 +436,19 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                             Email: transit@ashlandohio.gov
                         </Text>
                         <TouchableOpacity style={styles.csDismiss} onPress={() => setShowHelpModal(false)}>
-                            <Text style={styles.csDismissText}>Got it</Text>
+                            <LinearGradient colors={['#059669', '#047857']} style={styles.csDismissGradient}>
+                                <Text style={styles.csDismissText}>Got it</Text>
+                            </LinearGradient>
                         </TouchableOpacity>
                     </View>
                 </View>
             </Modal>
 
-            {/* SOS Modal */}
+            {/* ══ SOS MODAL ════════════════════════════════════════ */}
             <Modal visible={showSosModal} transparent animationType="fade" onRequestClose={() => setShowSosModal(false)}>
-                <View style={styles.modalOverlay}>
-                    <View style={[styles.comingSoonBox, { borderTopColor: '#ef4444' }]}>
+                <View style={styles.centeredOverlay}>
+                    <View style={styles.comingSoonBox}>
+                        <View style={[styles.modalAccent, { backgroundColor: '#ef4444' }]} />
                         <Text style={styles.csEmoji}>🆘</Text>
                         <Text style={styles.csTitle}>Emergency Contact</Text>
                         <Text style={styles.csMsg}>
@@ -326,11 +456,10 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                             Ashland Transit Emergency:{'\n'}
                             (419) 289-0000
                         </Text>
-                        <TouchableOpacity
-                            style={[styles.csDismiss, { backgroundColor: '#ef4444' }]}
-                            onPress={() => setShowSosModal(false)}
-                        >
-                            <Text style={styles.csDismissText}>Close</Text>
+                        <TouchableOpacity style={styles.csDismiss} onPress={() => setShowSosModal(false)}>
+                            <LinearGradient colors={['#ef4444', '#dc2626']} style={styles.csDismissGradient}>
+                                <Text style={styles.csDismissText}>Close</Text>
+                            </LinearGradient>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -339,128 +468,227 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
     );
 };
 
+/* ═══════════════════════════════════════════════════════════════════════
+   STYLES — Pixel-perfect, consistent 20px edge padding, 16px section gap
+   ═══════════════════════════════════════════════════════════════════════ */
+const EDGE = 20;
+
 const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#f8fafc' },
-    container: { flex: 1 },
-    scrollContent: { paddingBottom: 40 },
-    header: {
+    safeArea: { flex: 1, backgroundColor: '#1e3a8a' },
+    container: { flex: 1, backgroundColor: '#f0f4f8' },
+    scrollContent: { paddingBottom: 32 },
+
+    /* ── Header ────────────────────────────────────────────────── */
+    headerGradient: {
+        paddingTop: 12,
+        paddingBottom: 28,
+        paddingHorizontal: EDGE,
+    },
+    headerTop: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 24,
+        marginBottom: 18,
+    },
+    avatarContainer: { position: 'relative', marginRight: 12 },
+    avatarGradient: {
+        width: 48, height: 48, borderRadius: 24,
+        justifyContent: 'center', alignItems: 'center',
+        shadowColor: '#3b82f6', shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4, shadowRadius: 10, elevation: 6,
+    },
+    avatarText: { color: 'white', fontSize: 20, fontWeight: '900' },
+    avatarRing: {
+        position: 'absolute', top: -3, left: -3, right: -3, bottom: -3,
+        borderRadius: 27, borderWidth: 2, borderColor: 'rgba(96,165,250,0.4)',
+    },
+    headerTextBlock: { flex: 1 },
+    greeting: { fontSize: 12, color: 'rgba(255,255,255,0.65)', fontWeight: '600' },
+    username: { fontSize: 20, color: 'white', fontWeight: '900', marginTop: 1 },
+    logoutButton: {
+        paddingVertical: 7, paddingHorizontal: 14,
+        backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: 20,
+    },
+    logoutText: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.85)' },
+
+    /* Stats */
+    statsRow: {
+        flexDirection: 'row', alignItems: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        borderRadius: 14, paddingVertical: 12,
+    },
+    statItem: { flex: 1, alignItems: 'center' },
+    statNumber: { fontSize: 22, fontWeight: '900', color: 'white' },
+    statLabel: {
+        fontSize: 9, fontWeight: '700', color: 'rgba(255,255,255,0.55)',
+        textTransform: 'uppercase', letterSpacing: 1, marginTop: 2,
+    },
+    statDivider: { width: 1, height: 26, backgroundColor: 'rgba(255,255,255,0.12)' },
+
+    /* ── Body wrapper — consistent edge padding ────────────────── */
+    body: {
+        paddingHorizontal: EDGE,
         paddingTop: 16,
-        backgroundColor: 'white',
-        borderBottomWidth: 1,
-        borderBottomColor: '#f1f5f9',
     },
-    greeting: { fontSize: 13, color: '#64748b', fontWeight: '600' },
-    username: { fontSize: 22, color: '#0f172a', fontWeight: '900' },
-    logoutButton: { paddingVertical: 8, paddingHorizontal: 16, backgroundColor: '#fee2e2', borderRadius: 20 },
-    logoutText: { fontSize: 12, fontWeight: '700', color: '#ef4444' },
+    section: {
+        marginBottom: 16,
+    },
+
+    /* ── Wallet ────────────────────────────────────────────────── */
     walletCard: {
-        margin: 20,
-        padding: 24,
-        backgroundColor: '#0f172a',
-        borderRadius: 24,
-        shadowColor: '#0f172a',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        elevation: 10,
+        borderRadius: 20, padding: 22, overflow: 'hidden',
+        shadowColor: '#0f172a', shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.3, shadowRadius: 20, elevation: 10,
     },
-    walletLabel: { color: '#94a3b8', fontSize: 12, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
-    walletAmount: { color: 'white', fontSize: 42, fontWeight: '900', marginTop: 4 },
-    walletSub: { color: '#475569', fontSize: 12, fontWeight: '600', marginTop: 4 },
-    chipsRow: { flexDirection: 'row', paddingHorizontal: 20, gap: 10, marginBottom: 16 },
+    walletGlow: {
+        position: 'absolute', top: -20, right: -20,
+        width: 100, height: 100, borderRadius: 50,
+        backgroundColor: 'rgba(59,130,246,0.12)',
+    },
+    walletRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+    walletLabel: { color: '#64748b', fontSize: 10, fontWeight: '800', letterSpacing: 2 },
+    walletAmount: { color: 'white', fontSize: 38, fontWeight: '900', marginTop: 4, letterSpacing: -1 },
+    walletSub: { color: '#475569', fontSize: 11, fontWeight: '700', marginTop: 10 },
+    creditsBadge: {
+        backgroundColor: 'rgba(59,130,246,0.15)', borderRadius: 12,
+        paddingHorizontal: 12, paddingVertical: 8,
+    },
+    creditsText: { fontSize: 9, fontWeight: '900', color: '#60a5fa', textAlign: 'center', letterSpacing: 1, lineHeight: 14 },
+
+    /* ── Chips ──────────────────────────────────────────────────── */
+    chipsRow: {
+        flexDirection: 'row',
+        gap: 10,
+    },
+    chipWrapper: { flex: 1 },
     chip: {
-        flex: 1, alignItems: 'center', paddingVertical: 12, borderRadius: 16,
-        backgroundColor: 'white', borderWidth: 1, borderColor: '#e2e8f0',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05, shadowRadius: 3, elevation: 2,
+        alignItems: 'center', justifyContent: 'center',
+        paddingVertical: 14, borderRadius: 14,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
     },
-    chipSchedule: { borderColor: '#bfdbfe' },
-    chipRides: { borderColor: '#d1fae5' },
-    chipHelp: { borderColor: '#fde68a' },
-    chipSos: { borderColor: '#fecaca' },
     chipEmoji: { fontSize: 20, marginBottom: 4 },
-    chipLabel: { fontSize: 10, fontWeight: '700', color: '#374151' },
-    actionContainer: { paddingHorizontal: 20, marginBottom: 24 },
+    chipLabel: { fontSize: 9, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.3 },
+
+    /* ── Book Button ────────────────────────────────────────────── */
     bookButton: {
-        backgroundColor: '#059669',
-        paddingVertical: 20,
-        borderRadius: 20,
-        alignItems: 'center',
-        shadowColor: '#059669',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.3,
-        shadowRadius: 16,
-        elevation: 8,
+        paddingVertical: 20, borderRadius: 18, alignItems: 'center',
+        shadowColor: '#059669', shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.35, shadowRadius: 16, elevation: 8,
+        overflow: 'hidden',
     },
-    bookButtonText: { color: 'white', fontSize: 18, fontWeight: '900', letterSpacing: 0.5 },
-    activityContainer: { paddingHorizontal: 20 },
+    bookButtonText: { color: 'white', fontSize: 17, fontWeight: '900', letterSpacing: 0.3 },
+    bookSubtext: { color: 'rgba(255,255,255,0.6)', fontSize: 11, fontWeight: '600', marginTop: 3 },
+
+    /* ── Activity ───────────────────────────────────────────────── */
     activityHeader: {
         flexDirection: 'row', justifyContent: 'space-between',
-        alignItems: 'center', marginBottom: 16,
+        alignItems: 'center', marginBottom: 14,
     },
-    sectionTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b' },
-    refreshText: { color: '#059669', fontWeight: '700', fontSize: 14 },
+    sectionTitle: { fontSize: 17, fontWeight: '900', color: '#1e293b' },
+    refreshBtn: {
+        backgroundColor: '#f0fdf4', paddingVertical: 6,
+        paddingHorizontal: 14, borderRadius: 10,
+    },
+    refreshText: { color: '#059669', fontWeight: '800', fontSize: 11 },
+
+    /* ── Ride Card ──────────────────────────────────────────────── */
     rideCard: {
-        backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12,
+        backgroundColor: 'white', borderRadius: 16, marginBottom: 12,
+        flexDirection: 'row', overflow: 'hidden',
         shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06, shadowRadius: 6, elevation: 3,
+        shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
     },
-    rideHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-    rideDate: { fontSize: 13, color: '#64748b', fontWeight: '600' },
+    cardStripe: { width: 4 },
+    cardContent: { flex: 1, padding: 14 },
+    rideHeader: {
+        flexDirection: 'row', justifyContent: 'space-between',
+        alignItems: 'center', marginBottom: 10,
+    },
+    rideDate: { fontSize: 12, color: '#64748b', fontWeight: '600' },
     statusBadge: {
         flexDirection: 'row', alignItems: 'center', gap: 5,
         paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
     },
     statusDot: { width: 6, height: 6, borderRadius: 3 },
     statusText: { fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-    rideRoute: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 4 },
-    routeDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: '#059669' },
-    routeText: { fontSize: 14, fontWeight: '600', color: '#1e293b', flex: 1 },
-    routeLine: { width: 2, height: 12, backgroundColor: '#e2e8f0', marginLeft: 3, marginBottom: 4 },
-    rideFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: '#f1f5f9' },
-    fareText: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
-    viewTicketButton: { paddingVertical: 6, paddingHorizontal: 14, backgroundColor: '#eff6ff', borderRadius: 8 },
-    viewTicketText: { color: '#2563eb', fontWeight: '700', fontSize: 12 },
-    emptyState: { alignItems: 'center', padding: 48, backgroundColor: 'white', borderRadius: 20, borderWidth: 2, borderColor: '#e2e8f0', borderStyle: 'dashed' },
-    emptyEmoji: { fontSize: 42, marginBottom: 12 },
-    emptyTitle: { fontSize: 18, fontWeight: '800', color: '#1e293b', marginBottom: 4 },
-    emptyText: { color: '#94a3b8', fontWeight: '600', textAlign: 'center' },
+
+    routeBlock: { marginBottom: 10 },
+    routeRow: { flexDirection: 'row', alignItems: 'flex-start' },
+    routeConnector: { alignItems: 'center', marginRight: 10, paddingTop: 3 },
+    routeDot: { width: 8, height: 8, borderRadius: 4 },
+    routeLineVert: { width: 2, height: 14, backgroundColor: '#e2e8f0', marginVertical: 2 },
+    routeTexts: { flex: 1, justifyContent: 'space-between', gap: 8 },
+    routeText: { fontSize: 13, fontWeight: '600', color: '#1e293b' },
+
+    rideFooter: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9',
+    },
+    farePill: {
+        backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
+    },
+    fareText: { fontSize: 14, fontWeight: '900', color: 'white' },
+    rideMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    paxBadgeText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+    viewTicketButton: {
+        paddingVertical: 5, paddingHorizontal: 12,
+        backgroundColor: '#eff6ff', borderRadius: 8,
+    },
+    viewTicketText: { color: '#2563eb', fontWeight: '800', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.3 },
+
+    /* ── Empty State ────────────────────────────────────────────── */
+    emptyState: {
+        alignItems: 'center', padding: 40, backgroundColor: 'white',
+        borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0', borderStyle: 'dashed',
+    },
+    emptyEmoji: { fontSize: 44, marginBottom: 12 },
+    emptyTitle: { fontSize: 17, fontWeight: '900', color: '#1e293b', marginBottom: 4 },
+    emptyText: { color: '#94a3b8', fontWeight: '600', textAlign: 'center', fontSize: 13 },
+
+    /* ── Skeleton ───────────────────────────────────────────────── */
     skeletonCard: {
         backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12,
         shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.03, shadowRadius: 4, elevation: 2,
     },
-    skeletonLine: { height: 14, backgroundColor: '#f1f5f9', borderRadius: 8, width: '100%' },
-    // Modals
+    skeletonLine: { height: 14, backgroundColor: '#e2e8f0', borderRadius: 8, width: '100%' },
+
+    /* ── Modals ─────────────────────────────────────────────────── */
     modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+    centeredOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
     detailSheet: {
-        backgroundColor: 'white', borderTopLeftRadius: 28, borderTopRightRadius: 28,
-        padding: 24, paddingBottom: 40, minHeight: 400,
+        backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        padding: 24, paddingBottom: 36, minHeight: 400,
     },
-    sheetHandle: { width: 44, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    sheetHandle: { width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
     detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
     detailTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
-    closeBtn: { fontSize: 20, color: '#94a3b8', fontWeight: '700' },
-    detailCard: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, padding: 14, backgroundColor: '#f8fafc', borderRadius: 12 },
+    closeBtn: { fontSize: 20, color: '#94a3b8', fontWeight: '700', padding: 4 },
+    detailCard: {
+        flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+        marginBottom: 20, padding: 14, backgroundColor: '#f8fafc', borderRadius: 14,
+    },
     detailTicket: { fontSize: 15, fontWeight: '800', color: '#1e293b' },
-    detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 10 },
-    detailLabel: { fontSize: 12, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
+    detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 12 },
+    detailLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
     detailValue: { fontSize: 14, fontWeight: '700', color: '#1e293b', maxWidth: '60%', textAlign: 'right' },
     detailDivider: { height: 1, backgroundColor: '#f1f5f9' },
-    closeDetailBtn: { marginTop: 24, backgroundColor: '#0f172a', padding: 16, borderRadius: 14, alignItems: 'center' },
+    closeDetailBtn: { marginTop: 24, borderRadius: 14, overflow: 'hidden' },
+    closeDetailGradient: { padding: 16, alignItems: 'center', borderRadius: 14 },
     closeDetailText: { color: 'white', fontWeight: '800', fontSize: 15 },
+
+    /* ── Help / SOS Modals ──────────────────────────────────────── */
     comingSoonBox: {
-        backgroundColor: 'white', margin: 30, borderRadius: 24,
-        padding: 32, alignItems: 'center', borderTopWidth: 5, borderTopColor: '#059669',
+        backgroundColor: 'white', marginHorizontal: 28, borderRadius: 24,
+        padding: 28, alignItems: 'center', overflow: 'hidden',
+        width: width - 56,
     },
-    csEmoji: { fontSize: 52, marginBottom: 12 },
-    csTitle: { fontSize: 22, fontWeight: '900', color: '#0f172a', marginBottom: 10 },
+    modalAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
+    csEmoji: { fontSize: 48, marginBottom: 12 },
+    csTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 8 },
     csMsg: { fontSize: 14, color: '#64748b', fontWeight: '600', textAlign: 'center', lineHeight: 22 },
-    csDismiss: { marginTop: 24, backgroundColor: '#059669', paddingVertical: 14, paddingHorizontal: 40, borderRadius: 14 },
+    csDismiss: { marginTop: 20, borderRadius: 14, overflow: 'hidden', width: '100%' },
+    csDismissGradient: { paddingVertical: 14, alignItems: 'center', borderRadius: 14 },
     csDismissText: { color: 'white', fontWeight: '800', fontSize: 15 },
 });
 

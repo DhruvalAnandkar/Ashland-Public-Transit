@@ -127,4 +127,38 @@ export const getRideHistory = async () => {
     }
 };
 
+export const createRideCheckoutSession = async (rideId, payload = {}) => {
+    try {
+        const response = await api.post(`/rides/${rideId}/payments/checkout-session`, payload);
+        return response.data;
+    } catch (error) {
+        console.error("Checkout Session Error:", error.response?.data || error.message);
+        throw error;
+    }
+};
+
+export const verifyRideCheckoutSession = async (sessionId, ticketId) => {
+    try {
+        const response = await api.get('/rides/payments/verify-session', {
+            params: { sessionId, ticketId },
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Verify Session Error:", error.response?.data || error.message);
+        throw error;
+    }
+};
+
+export const downloadRideReceipt = async (ticketId) => {
+    try {
+        const response = await api.get(`/rides/track/${encodeURIComponent(ticketId)}/receipt`, {
+            responseType: 'text',
+        });
+        return response.data;
+    } catch (error) {
+        console.error("Receipt Download Error:", error.response?.data || error.message);
+        throw error;
+    }
+};
+
 export default api;

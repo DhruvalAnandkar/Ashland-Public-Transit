@@ -12,6 +12,7 @@ import {
   getAuditLogs,
   updateVehicleDriver,
   getDrivers,
+  getOperationsSnapshot,
 } from "../services/api";
 import {
   Clock,
@@ -198,6 +199,7 @@ const DispatcherDashboard = () => {
   const [viewDate, setViewDate] = useState(dayjs().format("YYYY-MM-DD"));
 
   const [driversList, setDriversList] = useState([]); // List of users with role 'Driver'
+  const [opsSnapshot, setOpsSnapshot] = useState({ drivers: [], riders: [] });
 
   const fetchData = async () => {
     try {
@@ -207,18 +209,24 @@ const DispatcherDashboard = () => {
         autoAcceptData,
         auditLogsData,
         driversData,
+        operationsData,
       ] = await Promise.all([
         getRides(),
         getVehicles(),
         getAutoAccept(),
         getAuditLogs(),
         getDrivers(),
+        getOperationsSnapshot(),
       ]);
       setRides(ridesData);
       setVehicles(vehiclesData);
       setAutoAccept(autoAcceptData.autoAccept);
       setAuditLogs(auditLogsData || []);
       setDriversList(driversData || []);
+      setOpsSnapshot({
+        drivers: operationsData?.drivers || [],
+        riders: operationsData?.riders || [],
+      });
       setLoading(false);
       // After the first successful data fetch, subsequent new cards that arrive
       // via socket should slide in from the right rather than rise from below.
@@ -470,7 +478,7 @@ const DispatcherDashboard = () => {
     );
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-20 font-sans">
+    <div className="max-w-[1400px] w-full mx-auto space-y-6 pb-20 font-sans px-4">
       {/* CRITICAL OVERBOOK ALERT - FIXED TOP */}
       {peakUsage > activeVehiclesCount && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-red-600/90 backdrop-blur-md text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-bounce">
@@ -487,127 +495,140 @@ const DispatcherDashboard = () => {
       )}
 
       {/* COMPACT DASHBOARD HEADER */}
-      <div
-        className={`flex flex-col md:flex-row justify-between items-center bg-white/80 backdrop-blur-xl p-4 rounded-3xl shadow-xl border border-white/20 gap-4 mt-6`}
-      >
-        {/* AUTO-ACCEPT TOGGLE & DATE NAV */}
+      <div className="flex flex-wrap items-center justify-between bg-white/95 backdrop-blur-2xl p-4 md:px-6 md:py-5 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100 gap-4 mt-6 relative z-30">
+
+        {/* LEFT COMPONENT: DATE & MANUAL REVIEW */}
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-slate-100/50 p-1 rounded-2xl">
-            <button
+          <motion.div
+            whileHover={{ scale: 1.02 }}
+            className="flex items-center gap-2 bg-slate-50 border border-slate-100 p-1.5 rounded-2xl shadow-[inset_0_2px_4px_rgba(0,0,0,0.02)] relative overflow-hidden"
+          >
+            <motion.div
+              animate={{ x: ["-100%", "200%"] }}
+              transition={{ repeat: Infinity, duration: 3, ease: "linear", repeatDelay: 1 }}
+              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/40 to-transparent w-full pointer-events-none"
+            />
+            <motion.button
+              whileTap={{ scale: 0.9 }}
               onClick={() => {
-                setViewDate(
-                  dayjs(viewDate).subtract(1, "day").format("YYYY-MM-DD"),
-                );
+                setViewDate(dayjs(viewDate).subtract(1, "day").format("YYYY-MM-DD"));
               }}
-              className="p-2 hover:bg-white rounded-xl transition-all shadow-sm text-slate-500 hover:text-blue-600"
+              className="p-2.5 bg-white rounded-xl shadow-sm text-slate-400 hover:text-blue-600 transition-colors relative z-10"
             >
-              <ChevronLeft size={20} />
-            </button>
+              <ChevronLeft size={16} strokeWidth={3} />
+            </motion.button>
 
-            <div className="flex flex-col items-center px-4">
-              <input
-                type="date"
-                value={viewDate}
-                onChange={(e) => setViewDate(e.target.value)}
-                className="font-black text-sm outline-none bg-transparent cursor-pointer text-slate-700"
-              />
-              <span className="text-[10px] font-black text-blue-500 uppercase tracking-wider">
-                {new Date(viewDate + "T12:00:00").toLocaleDateString(
-                  undefined,
-                  { weekday: "long" },
-                )}
+            <motion.div whileHover={{ y: -2 }} className="flex flex-col items-center px-4 relative z-10">
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={viewDate}
+                  onChange={(e) => setViewDate(e.target.value)}
+                  className="font-black text-[14px] outline-none bg-transparent cursor-pointer text-slate-800 uppercase"
+                />
+              </div>
+              <span className="text-[10px] font-black text-blue-600 uppercase tracking-[0.14em] mt-0.5 pointer-events-none">
+                {new Date(viewDate + "T12:00:00").toLocaleDateString(undefined, { weekday: "long" })}
               </span>
-            </div>
+            </motion.div>
 
-            <button
+            <motion.button
+              whileTap={{ scale: 0.9 }}
               onClick={() => {
                 setViewDate(dayjs(viewDate).add(1, "day").format("YYYY-MM-DD"));
               }}
-              className="p-2 hover:bg-white rounded-xl transition-all shadow-sm text-slate-500 hover:text-blue-600"
+              className="p-2.5 bg-white rounded-xl shadow-sm text-slate-400 hover:text-blue-600 transition-colors relative z-10"
             >
-              <ChevronRight size={20} />
-            </button>
-          </div>
+              <ChevronRight size={16} strokeWidth={3} />
+            </motion.button>
+          </motion.div>
 
-          {/* SETTINGS TOGGLE */}
-          <button
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.95 }}
             onClick={async () => {
               const newState = !autoAccept;
               setAutoAccept(newState);
               await updateAutoAccept(newState);
-              addToast(
-                `Auto-Accept ${newState ? "Enabled" : "Disabled"}`,
-                "success",
-              );
+              addToast(`Auto-Accept ${newState ? "Enabled" : "Disabled"}`, "success");
             }}
-            className={`flex items-center gap-2 px-4 py-2 rounded-xl border-2 transition-all font-bold text-xs uppercase tracking-widest ${autoAccept ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-white text-slate-400"}`}
+            className={`flex items-center gap-2 px-5 py-3.5 rounded-2xl border transition-colors font-black text-[11px] uppercase tracking-[0.1em] shadow-sm ${autoAccept ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100" : "border-slate-200 bg-white text-slate-500 hover:bg-slate-50"}`}
           >
-            <Settings
-              size={14}
-              className={autoAccept ? "animate-spin-slow" : ""}
-            />
+            <Settings size={14} className={autoAccept ? "animate-spin-slow text-emerald-500" : "text-slate-400"} />
             {autoAccept ? "Auto-Confirm ON" : "Manual Review"}
-          </button>
+          </motion.button>
         </div>
 
-        {/* VIEW TABS */}
-        <div className="flex p-1 bg-slate-100 rounded-xl">
-          <button
-            onClick={() => setActiveTab("manifest")}
-            className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all ${activeTab === "manifest" ? "bg-white text-blue-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-          >
-            Manifest
-          </button>
-          <button
-            onClick={() => setActiveTab("map")}
-            className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === "map" ? "bg-white text-emerald-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-          >
-            <Map size={14} /> Live Map
-          </button>
-          <button
-            onClick={() => setActiveTab("reports")}
-            className={`px-6 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === "reports" ? "bg-white text-purple-600 shadow-sm" : "text-slate-400 hover:text-slate-600"}`}
-          >
-            <BarChart3 size={14} /> Reports
-          </button>
+        {/* MIDDLE COMPONENT: VIEW TABS */}
+        <div className="flex p-1.5 bg-slate-50 border border-slate-100 rounded-2xl shadow-inner overflow-x-auto mx-auto lg:mx-0 relative">
+          {[{ id: "manifest", label: "Manifest" }, { id: "map", label: "Live Map", icon: Map }, { id: "reports", label: "Reports", icon: BarChart3 }].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`relative whitespace-nowrap px-8 py-3 rounded-xl text-[11px] font-black uppercase tracking-[0.1em] flex items-center gap-2 transition-colors z-10 ${activeTab === tab.id ? "text-blue-600" : "text-slate-400 hover:text-slate-600"
+                }`}
+            >
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="active-tab-indicator"
+                  className="absolute inset-0 bg-white rounded-xl shadow-[0_2px_10px_rgba(0,0,0,0.06)] border border-slate-100/50 -z-10"
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
+              {tab.icon && <tab.icon size={14} />}
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        <div className="flex items-center gap-8">
-          <div className="text-right hidden lg:block">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+        {/* RIGHT COMPONENT: STATS & ACTION BUTTONS */}
+        <div className="flex items-center gap-6 hidden xl:flex">
+          <div className="flex flex-col items-end">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">
               Revenue
             </p>
-            <p className="text-2xl font-black text-emerald-600 tracking-tight">
+            <p className="text-2xl font-black text-emerald-600 tracking-tight leading-none drop-shadow-sm">
               <AnimatedNumber value={dailyRevenue} decimals={2} prefix="$" />
             </p>
           </div>
 
-          {/* EXPERT FIX: Active Fleet Math (Total - In Shop) */}
-          <div className="text-right hidden lg:block">
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
+          <div className="flex flex-col items-end">
+            <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">
               Active Fleet
             </p>
-            <p
-              className={`text-2xl font-black tracking-tight ${activeVehiclesCount < vehicles.length ? "text-amber-600" : "text-blue-900"}`}
-            >
-              <AnimatedNumber value={activeVehiclesCount} />{" "}
-              <span className="text-sm text-slate-400 font-bold">
-                / {vehicles.length || 7}
-              </span>
+            <p className={`text-2xl font-black tracking-tight leading-none drop-shadow-sm ${activeVehiclesCount < vehicles.length ? "text-amber-600" : "text-blue-900"}`}>
+              <AnimatedNumber value={activeVehiclesCount} />
+              <span className="text-[13px] text-slate-400 font-bold ml-1">/ {vehicles.length || 7}</span>
             </p>
+          </div>
+
+          <div className="flex flex-col items-end justify-center">
+            <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-2">
+              Ops Visibility
+            </p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex items-center bg-blue-50 border border-blue-200/60 rounded-full px-2.5 py-1 shadow-sm group hover:scale-105 transition-transform cursor-default">
+                <UserCheck size={10} className="text-blue-500 mr-1.5 group-hover:text-blue-600 transition-colors" />
+                <span className="text-[10px] font-black text-blue-700">{opsSnapshot.riders.length}</span>
+              </div>
+              <div className="flex items-center bg-indigo-50 border border-indigo-200/60 rounded-full px-2.5 py-1 shadow-sm group hover:scale-105 transition-transform cursor-default">
+                <Truck size={10} className="text-indigo-500 mr-1.5 group-hover:text-indigo-600 transition-colors" />
+                <span className="text-[10px] font-black text-indigo-700">{opsSnapshot.drivers.length}</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* NEW BOOKING BUTTON */}
+        {/* ACTION BUTTONS */}
+        <div className="flex items-center gap-4">
           <button
             onClick={() => setIsBookingModalOpen(true)}
-            className="p-4 bg-emerald-500 text-white rounded-2xl shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all font-black hover:scale-105 active:scale-95"
+            className="w-14 h-14 bg-emerald-500 text-white rounded-full shadow-[0_8px_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400 transition-all font-black flex items-center justify-center hover:scale-105 active:scale-95"
+            title="Book a Ride"
           >
-            <Plus size={20} />
+            <Plus size={24} strokeWidth={3} />
           </button>
 
-          {/* CSV EXPORT BUTTON */}
           <button
             onClick={() => {
               const headers = [
@@ -650,9 +671,10 @@ const DispatcherDashboard = () => {
               link.download = `Ashland_Manifest_${viewDate}.csv`;
               link.click();
             }}
-            className="p-4 bg-blue-900 text-white rounded-2xl shadow-lg hover:bg-blue-800 transition-all font-black hover:scale-105 active:scale-95"
+            className="w-14 h-14 bg-blue-900 text-white rounded-full shadow-[0_8px_20px_rgba(30,58,138,0.3)] hover:bg-blue-800 transition-all font-black flex items-center justify-center hover:scale-105 active:scale-95"
+            title="Export Manifest CSV"
           >
-            <UserCheck size={20} />
+            <UserCheck size={22} strokeWidth={2.5} />
           </button>
         </div>
       </div>
@@ -665,7 +687,7 @@ const DispatcherDashboard = () => {
       ) : activeTab === "manifest" ? (
         <>
           {/* DYNAMIC HEATMAP */}
-          <div className="bg-white/60 backdrop-blur-xl p-6 rounded-3xl shadow-xl border border-white/40">
+          <div className="bg-white p-6 rounded-[2rem] shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-slate-100">
             {/* ... (Existing Heatmap Logic Kept via direct inclusion or we assume it was here) ... */}
             {/* NOTE: To save complexity, I am keeping the Heatmap as part of the Manifest view because it's operational */}
             <div className="flex justify-between items-end mb-6">
@@ -764,277 +786,188 @@ const DispatcherDashboard = () => {
                   const isElderly = ride.userType === "Elderly/Disabled";
 
                   return (
+
                     <motion.div
                       layout
                       key={ride._id}
-                      // On first load → cards rise gently from below (subtle, not distracting).
-                      // After first load → new cards pushed by socket slide in from the right.
-                      initial={
-                        isFirstLoad.current
-                          ? { opacity: 0, scale: 0.95, y: 10 }
-                          : { opacity: 0, x: 60 }
-                      }
+                      initial={isFirstLoad.current ? { opacity: 0, scale: 0.95, y: 10 } : { opacity: 0, x: 60 }}
                       animate={{
-                        opacity: 1,
-                        x: 0,
-                        scale: 1,
-                        y: 0,
-                        // Gold glow pulse when this specific card was just updated via socket.
-                        // Spreads outward then fades over 2 seconds, then returns to invisible.
-                        ...(recentlyUpdatedId === ride._id
-                          ? {
-                              boxShadow: [
-                                "0 0 0 0px rgba(251, 191, 36, 0)",
-                                "0 0 0 4px rgba(251, 191, 36, 0.9)",
-                                "0 0 0 8px rgba(251, 191, 36, 0.3)",
-                                "0 0 0 0px rgba(251, 191, 36, 0)",
-                              ],
-                            }
-                          : {
-                              boxShadow: "0 0 0 0px rgba(251, 191, 36, 0)",
-                            }),
+                        opacity: 1, x: 0, scale: 1, y: 0,
+                        ...(recentlyUpdatedId === ride._id ? { boxShadow: ["0 0 0 0px rgba(251, 191, 36, 0)", "0 0 0 4px rgba(251, 191, 36, 0.9)", "0 0 0 8px rgba(251, 191, 36, 0.3)", "0 0 0 0px rgba(251, 191, 36, 0)"] } : { boxShadow: "0 0 0 0px rgba(251, 191, 36, 0)" }),
                       }}
                       exit={{ opacity: 0, x: -30, scale: 0.95 }}
                       transition={{
-                        duration: 0.35,
-                        delay: isFirstLoad.current ? index * 0.04 : 0,
-                        ease: [0.22, 1, 0.36, 1],
-                        ...(recentlyUpdatedId === ride._id && {
-                          boxShadow: {
-                            duration: 2,
-                            ease: "easeOut",
-                            times: [0, 0.25, 0.6, 1],
-                          },
-                        }),
+                        duration: 0.35, delay: isFirstLoad.current ? index * 0.04 : 0, ease: [0.22, 1, 0.36, 1],
+                        ...(recentlyUpdatedId === ride._id && { boxShadow: { duration: 2, ease: "easeOut", times: [0, 0.25, 0.6, 1] } }),
                       }}
-                      className={`bg-white/80 backdrop-blur-md p-5 rounded-2xl border-l-4 border-t border-r border-b transition-all flex flex-col lg:flex-row justify-between items-center gap-4 shadow-sm hover:shadow-xl hover:bg-white hover:scale-[1.01] group
-                                    ${
-                                      ride.status === "Confirmed"
-                                        ? "border-l-emerald-500 border-white"
-                                        : ride.status === "En-Route"
-                                          ? "border-l-blue-500 border-blue-100 bg-blue-50/10"
-                                          : ride.status === "Rejected"
-                                            ? "border-l-red-500 border-red-100 bg-red-50/10"
-                                            : ride.status === "Completed"
-                                              ? "border-l-teal-500 border-teal-100"
-                                              : "border-l-amber-400 border-white"
-                                    }
-                                    ${isOverbooked ? "ring-2 ring-red-500 ring-offset-2" : ""}`}
+                      className={`relative bg-white/95 backdrop-blur-xl p-5 md:p-6 rounded-[1.5rem] border hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)] hover:border-slate-300 transition-all group overflow-hidden ${ride.status === 'Confirmed' ? 'border-emerald-100' :
+                          ride.status === 'En-Route' ? 'border-blue-100' :
+                            ride.status === 'Rejected' ? 'border-red-100' :
+                              ride.status === 'Completed' ? 'border-teal-100' :
+                                'border-slate-100'
+                        } ${isOverbooked ? 'ring-2 ring-red-500/50' : ''}`}
                     >
-                      <div className="flex-1 space-y-2 w-full">
-                        <div className="flex flex-wrap items-center gap-3">
-                          <span className="text-[10px] font-black bg-slate-800 text-white px-2 py-1 rounded flex items-center gap-1 shadow-md">
-                            <Ticket size={10} />{" "}
-                            {ride.ticketId || `TKT-${index + 100}`}
-                          </span>
-                          <h4 className="font-bold text-slate-800 text-lg tracking-tight">
-                            {ride.passengerName}
-                          </h4>
-                          <span
-                            className={`text-[9px] font-black px-3 py-1 rounded-full uppercase shadow-sm ${
-                              ride.status === "Confirmed"
-                                ? "bg-emerald-100 text-emerald-700"
-                                : ride.status === "En-Route"
-                                  ? "bg-blue-100 text-blue-700 animate-pulse"
-                                  : ride.status === "Completed"
-                                    ? "bg-green-100 text-green-700 border border-green-200"
-                                    : ride.status === "Rejected"
-                                      ? "bg-slate-100 text-slate-400"
-                                      : ride.status === "Pending" ||
-                                          ride.status === "Pending Review"
-                                        ? "bg-amber-100 text-amber-700 animate-pulse"
-                                        : "bg-amber-100 text-amber-700"
-                            } `}
-                          >
-                            {ride.status}
-                          </span>
-                          {isElderly && (
-                            <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-3 py-0.5 rounded-full text-[9px] font-black flex items-center gap-1 shadow-md shadow-blue-200">
-                              <UserCheck size={10} /> PRIORITY
+                      {/* Left color stripe indicator */}
+                      <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${ride.status === 'Confirmed' ? 'bg-emerald-500' :
+                          ride.status === 'En-Route' ? 'bg-blue-500' :
+                            ride.status === 'Rejected' ? 'bg-red-500' :
+                              ride.status === 'Completed' ? 'bg-teal-500' :
+                                ride.status === 'Cancelled' ? 'bg-slate-300' :
+                                  'bg-amber-400'
+                        }`} />
+
+                      <div className="flex flex-col lg:flex-row justify-between gap-6 pl-2">
+                        {/* LEFT: Core Identity & Route */}
+                        <div className="flex-1 space-y-4 w-full">
+                          {/* Header row */}
+                          <div className="flex flex-wrap items-center gap-3">
+                            <span className="text-[10px] font-black tracking-widest bg-slate-900 text-white px-2.5 py-1 rounded-md shadow-sm">
+                              {ride.ticketId || `TKT-${index + 100}`}
+                            </span>
+                            <h4 className="font-extrabold text-slate-800 text-lg tracking-tight m-0 leading-none">
+                              {ride.passengerName}
+                            </h4>
+                            <span className={`text-[9px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider shadow-sm border ${ride.status === 'Confirmed' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
+                                ride.status === 'En-Route' ? 'bg-blue-50 border-blue-100 text-blue-700 animate-pulse' :
+                                  ride.status === 'Completed' ? 'bg-teal-50 border-teal-100 text-teal-700' :
+                                    ride.status === 'Rejected' || ride.status === 'Cancelled' ? 'bg-slate-50 border-slate-200 text-slate-500' :
+                                      'bg-amber-50 border-amber-100 text-amber-700'
+                              }`}>
+                              {ride.status}
+                            </span>
+                            {isElderly && (
+                              <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-2 py-1 rounded-md text-[9px] font-black tracking-wider flex items-center gap-1 shadow-sm">
+                                <UserCheck size={10} /> PRIORITY
+                              </span>
+                            )}
+                            {isOverbooked && (
+                              <span className="bg-red-500 text-white px-2 py-1 rounded-md text-[9px] font-black tracking-wider animate-bounce flex items-center gap-1 shadow-sm">
+                                <ShieldAlert size={10} /> FLEET FULL
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Details Grid */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6 text-sm text-slate-600">
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 bg-slate-50 rounded-lg text-slate-400 border border-slate-100">
+                                <Clock size={14} />
+                              </div>
+                              <span className="font-bold text-slate-700">
+                                {d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
-                          )}
-                          {isOverbooked && (
-                            <div className="bg-red-500 text-white px-2 py-0.5 rounded-full text-[8px] font-bold animate-bounce flex items-center gap-1">
-                              <ShieldAlert size={10} /> FLEET FULL
+                            <div className="flex items-center gap-2">
+                              <div className="p-1.5 bg-slate-50 rounded-lg text-slate-400 border border-slate-100">
+                                <Phone size={14} />
+                              </div>
+                              <span className="font-medium">{ride.phoneNumber}</span>
                             </div>
-                          )}
-                        </div>
-
-                        <div className="text-xs text-slate-500 grid grid-cols-1 md:grid-cols-3 gap-4 pl-1">
-                          <p className="flex items-center gap-2 font-medium">
-                            <Phone size={14} className="text-slate-300" />{" "}
-                            {ride.phoneNumber}
-                          </p>
-                          <p className="flex items-center gap-2 font-bold text-slate-700">
-                            <Clock size={14} className="text-blue-500" />{" "}
-                            {d.toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </p>
-                          <p className="flex items-center gap-2 text-blue-600 font-bold truncate bg-blue-50/50 px-3 py-1 rounded-lg border border-blue-100/50">
-                            <MapPin size={12} className="text-red-400" />{" "}
-                            {ride.pickup} → {ride.dropoff}
-                          </p>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-4 w-full lg:w-auto justify-between border-t lg:border-t-0 lg:border-l pt-4 lg:pt-0 lg:pl-6 border-slate-100">
-                        <div className="flex flex-col gap-1 min-w-[140px]">
-                          {/* Assigned Driver Display */}
-                          <div className="relative">
-                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                              Assigned Vehicle
-                            </p>
-                            <select
-                              value={ride.assignedVehicle || "Unassigned"}
-                              onChange={(e) =>
-                                handleVehicleAssign(ride._id, e.target.value)
-                              }
-                              className="w-full text-[10px] font-bold border border-slate-200 rounded-xl p-2.5 bg-slate-50 outline-none focus:ring-2 focus:ring-blue-500/20 transition-all appearance-none cursor-pointer"
-                            >
-                              <option value="Unassigned">
-                                -- Select Asset --
-                              </option>
-                              {vehicles.length > 0 ? (
-                                vehicles.map((v) => (
-                                  <option key={v._id} value={v.name}>
-                                    {v.name} ({v.type})
-                                  </option>
-                                ))
-                              ) : (
-                                <>
-                                  <option value="Large Van (5)">
-                                    Large Van (5)
-                                  </option>
-                                  <option value="Small Car (2)">
-                                    Small Car (2)
-                                  </option>
-                                </>
-                              )}
-                            </select>
-
-                            {/* SHOW DRIVER IF ASSIGNED */}
-                            {(() => {
-                              const v = vehicles.find(
-                                (veh) => veh.name === ride.assignedVehicle,
-                              );
-                              if (v && v.assignedDriver) {
-                                return (
-                                  <div className="absolute -bottom-6 left-0 flex items-center gap-1.5 text-[10px] font-black text-white bg-blue-600 px-3 py-1 rounded-full shadow-md z-10 animate-in fade-in slide-in-from-bottom-2">
-                                    <UserCheck size={12} /> {v.assignedDriver}
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
-
-                            <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                              <Truck size={12} />
+                            <div className="flex items-start gap-2 sm:col-span-2 md:col-span-3">
+                              <div className="p-1.5 bg-blue-50 rounded-lg text-blue-500 border border-blue-100 mt-0.5 shrink-0">
+                                <MapPin size={14} />
+                              </div>
+                              <div className="flex items-center gap-2 flex-1 min-w-0 flex-wrap">
+                                <span className="font-bold text-slate-700 truncate max-w-[200px] bg-slate-50 px-2 py-1 rounded-md border border-slate-100 text-[11px] uppercase tracking-wide" title={ride.pickup}>
+                                  {ride.pickup.replace(/Location \(/g, '(')}
+                                </span>
+                                <span className="text-slate-300 font-bold shrink-0">→</span>
+                                <span className="font-bold text-slate-700 truncate max-w-[200px] bg-slate-50 px-2 py-1 rounded-md border border-slate-100 text-[11px] uppercase tracking-wide" title={ride.dropoff}>
+                                  {ride.dropoff.replace(/Location \(/g, '(')}
+                                </span>
+                              </div>
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex gap-2">
-                          {/* SMART MAP BUTTON */}
-                          <button
-                            onClick={() => {
-                              const origin = encodeURIComponent(
-                                ride.pickup + ", Ashland, OH",
-                              );
-                              const dest = encodeURIComponent(
-                                ride.dropoff + ", Ashland, OH",
-                              );
-                              window.open(
-                                `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`,
-                                "_blank",
-                              );
-                            }}
-                            className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all hover:scale-110 active:scale-90"
-                            title="Open Smart Map"
-                          >
-                            <MapPin size={16} />
-                          </button>
+                        {/* RIGHT: Operations & Assignment */}
+                        <div className="flex flex-col sm:flex-row lg:flex-col justify-between items-start sm:items-center lg:items-end gap-5 lg:gap-3 lg:border-l border-slate-100 lg:pl-6 lg:min-w-[340px] shrink-0">
 
-                          {/* CHAT WITH DRIVER BUTTON */}
-                          {(() => {
-                            const v = vehicles.find((veh) => veh.name === ride.assignedVehicle);
-                            if (!v?.assignedDriver) return null;
-                            const driver = driversList.find((d) => d.username === v.assignedDriver);
-                            return (
-                              <button
-                                onClick={() => openChat(v.assignedDriver, driver?._id || v.assignedDriver)}
-                                className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-600 hover:text-white transition-all hover:scale-110 active:scale-90"
-                                title="Chat with Driver"
+                          {/* Top Right: Assignment & Fare */}
+                          <div className="w-full flex justify-between items-start lg:items-center gap-4">
+                            <div className="flex-1 w-full max-w-[200px] relative">
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5">
+                                Assigned Vehicle
+                              </p>
+                              <select
+                                value={ride.assignedVehicle || 'Unassigned'}
+                                onChange={(e) => handleVehicleAssign(ride._id, e.target.value)}
+                                className={`w-full text-[10px] font-black uppercase tracking-wider border rounded-xl pl-3 pr-8 py-2.5 outline-none appearance-none cursor-pointer transition-colors ${ride.assignedVehicle ? 'bg-blue-50 border-blue-200 text-blue-700 hover:border-blue-300 shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300'
+                                  }`}
                               >
-                                <Phone size={16} />
+                                <option value="Unassigned">-- Select Asset --</option>
+                                {vehicles.length > 0 ? vehicles.map((v) => <option key={v._id} value={v.name}>{v.name} ({v.type})</option>) : (
+                                  <>
+                                    <option value="Large Van (5)">Large Van (5)</option>
+                                    <option value="Small Car (2)">Small Car (2)</option>
+                                  </>
+                                )}
+                              </select>
+                              <div className={`absolute right-3 top-8 pointer-events-none ${ride.assignedVehicle ? 'text-blue-500' : 'text-slate-400'}`}>
+                                <Truck size={12} />
+                              </div>
+                              {/* Driver Badge */}
+                              {(() => {
+                                const v = vehicles.find((veh) => veh.name === ride.assignedVehicle);
+                                if (v && v.assignedDriver) {
+                                  return (
+                                    <div className="absolute -bottom-3 left-2 flex items-center gap-1 text-[8px] font-black text-white bg-blue-600 px-2 py-0.5 rounded-full shadow-md z-10">
+                                      <UserCheck size={10} /> {v.assignedDriver}
+                                    </div>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
+
+                            <div className="text-right shrink-0 flex flex-col items-end pt-1">
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{ride.passengers} Pax</p>
+                              <p className="text-2xl font-black text-emerald-600 tracking-tight leading-none">${ride.fare.toFixed(2)}</p>
+                              <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase tracking-wider mt-1 ${ride.paymentStatus === 'Paid' ? 'text-emerald-700 bg-emerald-100' : 'text-amber-700 bg-amber-100'}`}>
+                                {ride.paymentStatus || 'Pending'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Bottom Right: Quick Actions */}
+                          <div className="flex items-center gap-2 w-full justify-end pt-2 mt-auto">
+                            <button onClick={() => {
+                              const origin = encodeURIComponent(ride.pickup + ', Ashland, OH');
+                              const dest = encodeURIComponent(ride.dropoff + ', Ashland, OH');
+                              window.open(`https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}`, '_blank');
+                            }} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors border border-slate-100 hover:border-blue-200" title="Smart Map">
+                              <MapPin size={16} />
+                            </button>
+                            {(() => {
+                              const v = vehicles.find((veh) => veh.name === ride.assignedVehicle);
+                              if (!v?.assignedDriver) return null;
+                              const driver = driversList.find((d) => d.username === v.assignedDriver);
+                              return (
+                                <button onClick={() => openChat(v.assignedDriver, driver?._id || v.assignedDriver)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition-colors border border-slate-100 hover:border-emerald-200" title="Chat with Driver">
+                                  <Phone size={16} />
+                                </button>
+                              );
+                            })()}
+                            <button onClick={() => setEditingRide(ride)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-amber-50 hover:text-amber-600 transition-colors border border-slate-100 hover:border-amber-200" title="Edit Details">
+                              <Pencil size={16} />
+                            </button>
+                            <button onClick={() => handleStatusUpdate(ride._id, 'Confirmed', ride.scheduledTime)} className="px-3 py-2 bg-emerald-50 text-emerald-600 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100 flex items-center gap-1.5" title="Confirm Ride">
+                              <CheckCircle size={14} /> Confirm
+                            </button>
+                            {ride.status === 'Confirmed' || ride.status === 'En-Route' ? (
+                              <button onClick={() => handleStatusUpdate(ride._id, 'Cancelled')} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Emergency Cancel">
+                                <Ban size={16} />
                               </button>
-                            );
-                          })()}
-
-                          {/* EDIT BUTTON */}
-                          <button
-                            onClick={() => setEditingRide(ride)}
-                            className="p-2.5 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-500 hover:text-white transition-all hover:scale-110 active:scale-90"
-                            title="Edit Manual Details"
-                          >
-                            <Pencil size={16} />
-                          </button>
-
-                          <button
-                            onClick={() =>
-                              handleStatusUpdate(
-                                ride._id,
-                                "Confirmed",
-                                ride.scheduledTime,
-                              )
-                            }
-                            className="p-2.5 bg-emerald-500 bg-gradient-to-b from-emerald-400 to-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-200 hover:scale-110 active:scale-95 transition-all"
-                            title="Confirm Ride"
-                          >
-                            <CheckCircle size={16} />
-                          </button>
-
-                          {/* EMERGENCY CANCEL */}
-                          {ride.status === "Confirmed" ||
-                          ride.status === "En-Route" ? (
-                            <button
-                              onClick={() =>
-                                handleStatusUpdate(ride._id, "Cancelled")
-                              }
-                              className="p-2.5 bg-red-100 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all shadow-sm hover:scale-110 active:scale-90"
-                              title="Emergency Cancel"
-                            >
-                              <Ban size={16} />
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() =>
-                                handleStatusUpdate(ride._id, "Rejected")
-                              }
-                              className="p-2.5 bg-slate-100 text-slate-400 rounded-xl hover:bg-red-500 hover:text-white transition-all shadow-sm hover:scale-110 active:scale-90"
-                              title="Reject Request"
-                            >
-                              <XCircle size={16} />
-                            </button>
-                          )}
-                        </div>
-
-                        <div className="text-right min-w-[70px]">
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                            {ride.passengers} Pax
-                          </p>
-                          <div className="flex flex-col items-end">
-                            <p className="text-xl font-black text-slate-800 tracking-tight">
-                              ${ride.fare.toFixed(2)}
-                            </p>
-                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full flex items-center gap-1">
-                              <CircleDollarSign size={8} /> VERIFIED
-                            </span>
+                            ) : (
+                              <button onClick={() => handleStatusUpdate(ride._id, 'Rejected')} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Reject Request">
+                                <XCircle size={16} />
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
                     </motion.div>
+
                   );
                 })
               ) : (
@@ -1049,194 +982,403 @@ const DispatcherDashboard = () => {
         </>
       ) : (
         // --- REPORTS & ANALYTICS VIEW ---
-        <div className="space-y-8 animate-in fade-in">
-          {/* 1. FINANCIAL SUMMARY */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">
-                    Revenue (Locked)
-                  </p>
-                  <h3 className="text-3xl font-black text-slate-800 mt-1">
-                    $
-                    {rides
-                      .reduce(
-                        (acc, r) =>
-                          acc +
-                          (r.paymentStatus === "Invoiced"
-                            ? r.finalizedFare || r.fare
-                            : 0),
-                        0,
-                      )
-                      .toFixed(2)}
+        (() => {
+          // ── COMPUTED ANALYTICS DATA ─────────────────────────────────
+          const totalRides = rides.length;
+          const completedRides = rides.filter(r => r.status === "Completed");
+          const confirmedRides = rides.filter(r => r.status === "Confirmed");
+          const cancelledRides = rides.filter(r => r.status === "Cancelled" || r.status === "Rejected");
+          const enRouteRides = rides.filter(r => r.status === "En-Route");
+          const pendingRides = rides.filter(r => r.status === "Pending" || r.status === "Pending Review");
+
+          const completionRate = totalRides > 0 ? ((completedRides.length / totalRides) * 100).toFixed(1) : 0;
+          const cancellationRate = totalRides > 0 ? ((cancelledRides.length / totalRides) * 100).toFixed(1) : 0;
+          const avgFare = totalRides > 0 ? (rides.reduce((s, r) => s + (r.fare || 0), 0) / totalRides).toFixed(2) : "0.00";
+          const totalRevenue = rides.reduce((s, r) => s + (r.status === "Completed" || r.status === "Confirmed" ? r.fare : 0), 0);
+          const invoicedRevenue = rides.reduce((s, r) => s + (r.paymentStatus === "Invoiced" ? (r.finalizedFare || r.fare) : 0), 0);
+          const collectionRate = totalRevenue > 0 ? Math.min(((invoicedRevenue / totalRevenue) * 100), 100).toFixed(0) : 0;
+
+          // Passenger demographics
+          const elderlyRides = rides.filter(r => r.userType === "Elderly/Disabled").length;
+          const generalRides = rides.filter(r => r.userType === "General").length;
+          const childRides = rides.filter(r => r.userType === "Child").length;
+          const totalPax = rides.reduce((s, r) => s + (r.passengers || 1), 0);
+
+          // Status distribution for Pie Chart
+          const STATUS_COLORS = ["#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#06b6d4", "#8b5cf6"];
+          const statusDistribution = [
+            { name: "Completed", value: completedRides.length },
+            { name: "Confirmed", value: confirmedRides.length },
+            { name: "Pending", value: pendingRides.length },
+            { name: "Cancelled", value: cancelledRides.length },
+            { name: "En-Route", value: enRouteRides.length },
+          ].filter(s => s.value > 0);
+
+          // Rider type for pie
+          const RIDER_COLORS = ["#6366f1", "#f97316", "#14b8a6"];
+          const riderDistribution = [
+            { name: "General", value: generalRides },
+            { name: "Elderly/Disabled", value: elderlyRides },
+            { name: "Child", value: childRides },
+          ].filter(s => s.value > 0);
+
+          // Top Routes
+          const routeMap = {};
+          rides.forEach(r => {
+            const key = `${r.pickup?.substring(0, 20)} → ${r.dropoff?.substring(0, 20)}`;
+            routeMap[key] = (routeMap[key] || 0) + 1;
+          });
+          const topRoutes = Object.entries(routeMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+          // Daily ride counts for last 7 days
+          const last7Days = [];
+          for (let i = 6; i >= 0; i--) {
+            const day = dayjs().subtract(i, "day");
+            const dayStr = day.format("YYYY-MM-DD");
+            const dayLabel = day.format("ddd");
+            const count = rides.filter(r => dayjs(r.scheduledTime).format("YYYY-MM-DD") === dayStr).length;
+            last7Days.push({ day: dayLabel, rides: count });
+          }
+
+          // Driver workload
+          const driverWorkload = {};
+          vehicles.forEach(v => {
+            if (v.assignedDriver) {
+              const driverRides = rides.filter(r => r.assignedVehicle === v.name && (r.status === "Completed" || r.status === "Confirmed" || r.status === "En-Route"));
+              driverWorkload[v.assignedDriver] = (driverWorkload[v.assignedDriver] || 0) + driverRides.length;
+            }
+          });
+          const driverPerformance = Object.entries(driverWorkload).map(([name, count]) => ({ name, rides: count })).sort((a, b) => b.rides - a.rides);
+
+          return (
+            <div className="space-y-8 animate-in fade-in">
+              {/* ROW 1: KEY PERFORMANCE INDICATORS */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+                  className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-emerald-50 text-emerald-500 rounded-xl border border-emerald-100"><Activity size={18} /></div>
+                    <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded uppercase">{completionRate}%</span>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">Completion Rate</p>
+                  <p className="text-2xl font-black text-slate-800"><AnimatedNumber value={completedRides.length} /> <span className="text-sm text-slate-400 font-bold">/ {totalRides}</span></p>
+                </motion.div>
+
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
+                  className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-red-50 text-red-500 rounded-xl border border-red-100"><Ban size={18} /></div>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded uppercase ${parseFloat(cancellationRate) > 20 ? 'text-red-600 bg-red-50' : 'text-amber-600 bg-amber-50'}`}>{cancellationRate}%</span>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">Cancellation Rate</p>
+                  <p className="text-2xl font-black text-slate-800"><AnimatedNumber value={cancelledRides.length} /> <span className="text-sm text-slate-400 font-bold">cancelled</span></p>
+                </motion.div>
+
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}
+                  className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-blue-50 text-blue-500 rounded-xl border border-blue-100"><CircleDollarSign size={18} /></div>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">Average Fare</p>
+                  <p className="text-2xl font-black text-emerald-600"><AnimatedNumber value={parseFloat(avgFare)} decimals={2} prefix="$" /></p>
+                </motion.div>
+
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+                  className="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="p-2 bg-indigo-50 text-indigo-500 rounded-xl border border-indigo-100"><UserCheck size={18} /></div>
+                  </div>
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.15em] mb-1">Total Passengers</p>
+                  <p className="text-2xl font-black text-slate-800"><AnimatedNumber value={totalPax} /> <span className="text-sm text-slate-400 font-bold">pax</span></p>
+                </motion.div>
+              </div>
+
+              {/* ROW 2: FINANCIAL SUMMARY */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Revenue (Locked)</p>
+                      <h3 className="text-3xl font-black text-slate-800 mt-1">
+                        $<AnimatedNumber value={invoicedRevenue} decimals={2} />
+                      </h3>
+                    </div>
+                    <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl"><ShieldCheck size={24} /></div>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${collectionRate}%` }} transition={{ duration: 1.2, ease: "easeOut" }} className="bg-emerald-500 h-full" />
+                  </div>
+                  <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase">{collectionRate}% Collected</p>
+                </div>
+
+                <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
+                  <h3 className="text-xl font-black uppercase tracking-tight mb-2">Monthly Statement</h3>
+                  <p className="text-blue-100 text-sm font-medium mb-6">Download the official finalized manifest for accounting.</p>
+                  <button onClick={downloadMonthlyReport} className="w-full py-3 bg-white text-blue-700 font-black uppercase text-xs rounded-xl hover:bg-blue-50 transition-colors flex items-center justify-center gap-2">
+                    <Download size={16} /> Export CSV
+                  </button>
+                </div>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Fleet Health</p>
+                      <h3 className="text-3xl font-black text-slate-800 mt-1">
+                        <AnimatedNumber value={activeVehiclesCount} />
+                        <span className="text-sm opacity-50 ml-1">/ {vehicles.length} Active</span>
+                      </h3>
+                    </div>
+                    <div className="p-3 bg-amber-100 text-amber-600 rounded-xl"><Truck size={24} /></div>
+                  </div>
+                  <div className="flex gap-2 mt-2">
+                    {vehicles.map((v, i) => (
+                      <div key={v._id || i} className={`w-4 h-4 rounded-full border-2 ${v.status === "Active" ? "bg-emerald-400 border-emerald-200" : "bg-slate-300 border-slate-200"}`} title={`${v.name}: ${v.status}`} />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* ROW 3: CHARTS */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* PEAK HOURS CHART */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[400px]">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <BarChart3 size={16} className="text-blue-500" /> Peak Traffic Hours
                   </h3>
+                  <ResponsiveContainer width="100%" height="85%">
+                    <BarChart data={hourlyFleetUsage.map((count, hour) => ({ hour: `${hour}:00`, rides: count })).filter((d) => d.rides > 0)}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                      <XAxis dataKey="hour" fontSize={10} tickLine={false} axisLine={false} />
+                      <YAxis fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip cursor={{ fill: "#F1F5F9" }} contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+                      <Bar dataKey="rides" fill="#3B82F6" radius={[6, 6, 0, 0]} barSize={36} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
-                <div className="p-3 bg-emerald-100 text-emerald-600 rounded-xl">
-                  <ShieldCheck size={24} />
+
+                {/* RIDE STATUS DISTRIBUTION (Pie Chart) */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[400px]">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <PieChart size={16} className="text-purple-500" /> Ride Status Distribution
+                  </h3>
+                  <ResponsiveContainer width="100%" height="85%">
+                    <RePie>
+                      <Pie data={statusDistribution} cx="50%" cy="45%" innerRadius={60} outerRadius={100} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                        {statusDistribution.map((entry, i) => (<Cell key={i} fill={STATUS_COLORS[i % STATUS_COLORS.length]} />))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+                      <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 700 }} />
+                    </RePie>
+                  </ResponsiveContainer>
                 </div>
               </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div className="bg-emerald-500 h-full w-[75%]"></div>
-              </div>
-              <p className="text-[10px] text-slate-400 font-bold mt-2 uppercase">
-                75% Collected
-              </p>
-            </div>
 
-            <div className="bg-blue-600 text-white p-6 rounded-2xl shadow-lg shadow-blue-200">
-              <h3 className="text-xl font-black uppercase tracking-tight mb-2">
-                Monthly Statement
-              </h3>
-              <p className="text-blue-100 text-sm font-medium mb-6">
-                Download the official finalized manifest for accounting.
-              </p>
-              <button
-                onClick={downloadMonthlyReport}
-                className="w-full py-3 bg-white text-blue-700 font-black uppercase text-xs rounded-xl hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
-              >
-                <Download size={16} /> Export CSV
-              </button>
-            </div>
-            {/* FLEET HEALTH CARD */}
-            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 flex items-center gap-6">
-              <div className="p-4 bg-amber-100 rounded-2xl text-amber-600">
-                <Truck size={32} />
-              </div>
-              <div>
-                <p className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                  Fleet Health
-                </p>
-                <h3 className="text-3xl font-black text-slate-800">
-                  {activeVehiclesCount}{" "}
-                  <span className="text-sm opacity-50">
-                    / {vehicles.length} Active
-                  </span>
-                </h3>
-              </div>
-            </div>
-          </div>
+              {/* ROW 4: WEEKLY TREND + RIDER DEMOGRAPHICS */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* 7-DAY TREND */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[350px]">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Activity size={16} className="text-emerald-500" /> 7-Day Ride Trend
+                  </h3>
+                  <ResponsiveContainer width="100%" height="82%">
+                    <BarChart data={last7Days}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
+                      <XAxis dataKey="day" fontSize={11} tickLine={false} axisLine={false} fontWeight={700} />
+                      <YAxis fontSize={10} tickLine={false} axisLine={false} />
+                      <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+                      <Bar dataKey="rides" fill="#10b981" radius={[6, 6, 0, 0]} barSize={32} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
 
-          {/* CHARTS CONTAINER */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* PEAK HOURS CHART */}
-            <div className="bg-white p-6 rounded-3xl shadow-xl border border-slate-100 h-[400px]">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6">
-                Peak Traffic Hours
-              </h3>
-              <ResponsiveContainer width="100%" height="90%">
-                <BarChart
-                  data={hourlyFleetUsage
-                    .map((count, hour) => ({
-                      hour: `${hour}:00`,
-                      rides: count,
-                    }))
-                    .filter((d) => d.rides > 0)}
-                >
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    vertical={false}
-                    stroke="#E2E8F0"
-                  />
-                  <XAxis
-                    dataKey="hour"
-                    fontSize={10}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis fontSize={10} tickLine={false} axisLine={false} />
-                  <Tooltip
-                    cursor={{ fill: "#F1F5F9" }}
-                    contentStyle={{
-                      borderRadius: "12px",
-                      border: "none",
-                      boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)",
-                    }}
-                  />
-                  <Bar
-                    dataKey="rides"
-                    fill="#3B82F6"
-                    radius={[4, 4, 0, 0]}
-                    barSize={40}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
+                {/* RIDER DEMOGRAPHICS */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 h-[350px]">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <UserCheck size={16} className="text-indigo-500" /> Rider Demographics
+                  </h3>
+                  <ResponsiveContainer width="100%" height="82%">
+                    <RePie>
+                      <Pie data={riderDistribution} cx="50%" cy="45%" innerRadius={50} outerRadius={90} paddingAngle={4} dataKey="value" label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false} fontSize={10}>
+                        {riderDistribution.map((entry, i) => (<Cell key={i} fill={RIDER_COLORS[i % RIDER_COLORS.length]} />))}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: "12px", border: "none", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)" }} />
+                      <Legend wrapperStyle={{ fontSize: "11px", fontWeight: 700 }} />
+                    </RePie>
+                  </ResponsiveContainer>
+                </div>
+              </div>
 
-          {/* 2. IMMUTABLE AUDIT LOG */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-              <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
-                <FileText size={20} className="text-slate-400" /> System Audit
-                Trail
-              </h3>
-              <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded">
-                Read-Only
-              </span>
-            </div>
-            <div className="overflow-x-auto max-h-96">
-              <table className="w-full text-left">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider sticky top-0">
-                  <tr>
-                    <th className="p-4">Time</th>
-                    <th className="p-4">User</th>
-                    <th className="p-4">Action</th>
-                    <th className="p-4">Target</th>
-                    <th className="p-4">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-sm">
-                  {auditLogs.slice(0, 15).map((log) => (
-                    <tr
-                      key={log._id}
-                      className="hover:bg-slate-50 transition-colors"
-                    >
-                      <td className="p-4 font-mono text-slate-500 text-xs">
-                        {new Date(log.createdAt).toLocaleString()}
-                      </td>
-                      <td className="p-4 font-bold text-slate-700">
-                        {log.performedBy}
-                      </td>
-                      <td className="p-4">
-                        <span className="inline-block px-2 py-1 bg-slate-100 rounded text-[10px] font-bold uppercase text-slate-600">
-                          {log.action}
-                        </span>
-                      </td>
-                      <td className="p-4 text-xs font-mono text-slate-400">
-                        {log.targetModel}
-                      </td>
-                      <td
-                        className="p-4 text-slate-600 text-xs max-w-xs truncate"
-                        title={JSON.stringify(log.changes || log.metadata)}
-                      >
-                        {log.metadata ||
-                          (log.changes ? JSON.stringify(log.changes) : "-")}
-                      </td>
-                    </tr>
-                  ))}
-                  {auditLogs.length === 0 && (
-                    <tr>
-                      <td
-                        colSpan="5"
-                        className="p-8 text-center text-slate-400 italic"
-                      >
-                        No audit records found.
-                      </td>
-                    </tr>
+              {/* ROW 5: DRIVER PERFORMANCE + TOP ROUTES */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* DRIVER UTILIZATION */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <Truck size={16} className="text-blue-500" /> Driver Utilization
+                  </h3>
+                  {driverPerformance.length > 0 ? (
+                    <div className="space-y-4">
+                      {driverPerformance.map((dp, i) => {
+                        const maxRides = driverPerformance[0]?.rides || 1;
+                        const pct = ((dp.rides / maxRides) * 100).toFixed(0);
+                        return (
+                          <div key={dp.name} className="flex items-center gap-4">
+                            <div className="flex items-center gap-2.5 w-32 shrink-0">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-white text-[10px] font-black ${i === 0 ? "bg-blue-600" : i === 1 ? "bg-blue-400" : "bg-slate-400"}`}>
+                                #{i + 1}
+                              </div>
+                              <span className="text-xs font-black text-slate-700 truncate">{dp.name}</span>
+                            </div>
+                            <div className="flex-1 bg-slate-100 h-3 rounded-full overflow-hidden">
+                              <motion.div initial={{ width: 0 }} animate={{ width: `${pct}%` }} transition={{ duration: 0.8, delay: i * 0.1, ease: "easeOut" }} className={`h-full rounded-full ${i === 0 ? "bg-blue-500" : i === 1 ? "bg-blue-400" : "bg-slate-400"}`} />
+                            </div>
+                            <span className="text-xs font-black text-slate-600 w-16 text-right">{dp.rides} rides</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest text-center py-8">No driver assignments yet</p>
                   )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                </div>
 
-          <div className="text-center py-8">
-            <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-slate-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-800">
-              <ShieldCheck size={12} className="text-emerald-500" />
-              System Hardened & Audit-Ready v1.0
+                {/* TOP ROUTES */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                    <MapPin size={16} className="text-red-500" /> Top Routes
+                  </h3>
+                  {topRoutes.length > 0 ? (
+                    <div className="space-y-3">
+                      {topRoutes.map(([route, count], i) => (
+                        <div key={route} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 hover:bg-slate-100 transition-colors">
+                          <div className="flex items-center gap-3">
+                            <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-white text-[10px] font-black ${i === 0 ? "bg-red-500" : i === 1 ? "bg-orange-500" : "bg-slate-400"}`}>
+                              {i + 1}
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-600 truncate max-w-[250px]">{route}</span>
+                          </div>
+                          <span className="text-xs font-black text-slate-800 bg-white px-2.5 py-1 rounded-lg border border-slate-200 shadow-sm">{count} trips</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-xs font-bold uppercase tracking-widest text-center py-8">No route data available</p>
+                  )}
+                </div>
+              </div>
+
+              {/* ROW 6: OPS SNAPSHOT */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* ACTIVE RIDERS */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <UserCheck size={16} className="text-blue-500" /> Active Riders ({opsSnapshot.riders.length})
+                  </h3>
+                  {opsSnapshot.riders.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                      {opsSnapshot.riders.map((rider, i) => (
+                        <div key={rider._id || i} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-black text-[10px]">{(rider.username || rider.fullName || "?").charAt(0).toUpperCase()}</div>
+                          <span className="font-bold text-slate-700 truncate">{rider.username || rider.fullName || `Rider #${i + 1}`}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-xs font-bold uppercase text-center py-6">No active riders</p>
+                  )}
+                </div>
+
+                {/* ACTIVE DRIVERS */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <Truck size={16} className="text-indigo-500" /> Active Drivers ({opsSnapshot.drivers.length})
+                  </h3>
+                  {opsSnapshot.drivers.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+                      {opsSnapshot.drivers.map((driver, i) => {
+                        const assignedVehicle = vehicles.find(v => v.assignedDriver === driver.username);
+                        return (
+                          <div key={driver._id || i} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-[10px]">{(driver.username || "?").charAt(0).toUpperCase()}</div>
+                            <div className="flex flex-col min-w-0">
+                              <span className="font-bold text-slate-700 truncate">{driver.username || `Driver #${i + 1}`}</span>
+                              {assignedVehicle && <span className="text-[9px] text-blue-500 font-bold truncate">{assignedVehicle.name}</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-slate-400 text-xs font-bold uppercase text-center py-6">No active drivers</p>
+                  )}
+                </div>
+              </div>
+
+              {/* AUDIT LOG */}
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+                <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+                  <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight flex items-center gap-2">
+                    <FileText size={20} className="text-slate-400" /> System Audit Trail
+                  </h3>
+                  <span className="text-[10px] font-bold bg-slate-100 text-slate-500 px-2 py-1 rounded">Read-Only</span>
+                </div>
+                <div className="overflow-x-auto max-h-96">
+                  <table className="w-full text-left">
+                    <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px] tracking-wider sticky top-0">
+                      <tr>
+                        <th className="p-4">Time</th>
+                        <th className="p-4">User</th>
+                        <th className="p-4">Action</th>
+                        <th className="p-4">Target</th>
+                        <th className="p-4">Details</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-sm">
+                      {auditLogs.slice(0, 15).map((log) => (
+                        <tr key={log._id} className="hover:bg-slate-50 transition-colors">
+                          <td className="p-4 font-mono text-slate-500 text-xs">{new Date(log.createdAt).toLocaleString()}</td>
+                          <td className="p-4 font-bold text-slate-700">{log.performedBy}</td>
+                          <td className="p-4">
+                            <span className="inline-block px-2 py-1 bg-slate-100 rounded text-[10px] font-bold uppercase text-slate-600">{log.action}</span>
+                          </td>
+                          <td className="p-4 text-xs font-mono text-slate-400">{log.targetModel}</td>
+                          <td className="p-4 text-slate-600 text-xs cursor-default">
+                            {(() => {
+                              if (log.metadata && typeof log.metadata === "string") return log.metadata;
+                              if (!log.changes && !log.metadata) return "-";
+                              const data = log.changes || log.metadata;
+                              if (data && data.from && data.to) {
+                                return (
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-slate-400 line-through">{data.from}</span>
+                                    <span className="text-slate-300">→</span>
+                                    <span className="font-black text-emerald-600">{data.to}</span>
+                                  </div>
+                                );
+                              }
+                              let str = typeof data === "object" ? JSON.stringify(data) : data;
+                              const cleanStr = str.replace(/[{}""]/g, "").replace(/:/g, ": ").replace(/,/g, ", ");
+                              return (<div className="truncate max-w-[200px]" title={str}>{cleanStr}</div>);
+                            })()}
+                          </td>
+                        </tr>
+                      ))}
+                      {auditLogs.length === 0 && (
+                        <tr><td colSpan="5" className="p-8 text-center text-slate-400 italic">No audit records found.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="text-center py-8">
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 text-slate-400 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-800">
+                  <ShieldCheck size={12} className="text-emerald-500" />
+                  System Hardened & Audit-Ready v1.0
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          );
+        })()
       )}
 
       {/* EDIT MODAL */}
