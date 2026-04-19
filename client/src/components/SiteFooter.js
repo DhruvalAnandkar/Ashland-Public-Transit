@@ -2,7 +2,6 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
-    Bus,
     Mail,
     Phone,
     MapPin,
@@ -10,37 +9,19 @@ import {
     ArrowRight,
     Github,
 } from "lucide-react";
+import BrandLogo from "./BrandLogo";
 
 const SiteFooter = () => {
     return (
-        <footer className="relative mt-20 text-slate-600">
-            {/* Top wave / gradient bleed */}
-            <div
-                className="h-20"
-                style={{
-                    background:
-                        "linear-gradient(180deg, transparent 0%, rgba(224,231,255,0.5) 100%)",
-                }}
-            />
-            <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 text-slate-300">
+        <footer className="relative mt-20 text-slate-600 dark:text-slate-400">
+            {/* Top wave / gradient bleed — lighter in light mode, darker in dark */}
+            <div className="h-20 bg-gradient-to-b from-transparent to-indigo-100/50 dark:to-slate-900/80" />
+            <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-blue-950 dark:from-slate-950 dark:via-slate-950 dark:to-blue-950 text-slate-300">
                 <div className="max-w-7xl mx-auto px-6 sm:px-8 py-14">
                     <div className="grid md:grid-cols-5 gap-10">
                         <div className="md:col-span-2">
-                            <div className="flex items-center gap-3 mb-4">
-                                <motion.div
-                                    whileHover={{ rotate: -10 }}
-                                    className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-500 text-white flex items-center justify-center shadow-[0_10px_30px_rgba(59,130,246,0.35)]"
-                                >
-                                    <Bus size={18} />
-                                </motion.div>
-                                <div>
-                                    <p className="text-[10px] font-black uppercase tracking-[0.28em] text-blue-300">
-                                        Ashland
-                                    </p>
-                                    <p className="text-lg font-black tracking-tight text-white -mt-0.5">
-                                        Public Transit
-                                    </p>
-                                </div>
+                            <div className="mb-4">
+                                <BrandLogo size="lg" tone="onDark" />
                             </div>
                             <p className="text-sm leading-relaxed text-slate-400 max-w-md">
                                 A modern, accessible transit experience for the City of

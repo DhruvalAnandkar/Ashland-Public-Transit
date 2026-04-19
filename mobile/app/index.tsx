@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { useAppTheme } from '../context/ThemeContext';
 import * as WebBrowser from 'expo-web-browser';
 import * as Linking from 'expo-linking';
 import { useRouter } from 'expo-router';
@@ -19,6 +20,8 @@ import NotificationsScreen from '../screens/NotificationsScreen';
 import HelpScreen from '../screens/HelpScreen';
 import AboutScreen from '../screens/AboutScreen';
 import FareInfoScreen from '../screens/FareInfoScreen';
+import ChatbotScreen from '../screens/ChatbotScreen';
+import ChatbotBubble from '../components/ChatbotBubble';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -36,9 +39,11 @@ type ScreenKey =
     | 'NOTIFICATIONS'
     | 'HELP'
     | 'ABOUT'
-    | 'FARE_INFO';
+    | 'FARE_INFO'
+    | 'CHATBOT';
 
 export default function Index() {
+    const { colors } = useAppTheme();
     const [user, setUser] = useState<any>(null);
     const [stack, setStack] = useState<ScreenKey[]>(['HOME']);
     const [currentRide, setCurrentRide] = useState<any>(null);
@@ -192,13 +197,45 @@ export default function Index() {
     const route = { params: currentParams };
 
     // Opens any sub-screen from the rider menu
-    const openSubScreen = (key: ScreenKey) => push(key);
+    const openSubScreen = (key: ScreenKey, params?: any) => push(key, params);
+
+    // Chatbot → app deep links. Accepts the same ScreenKey values plus any
+    // custom intents (e.g. CALL_DISPATCH) that the chatbot handles on its own.
+    const handleChatbotNavigate = (screen: string, params?: any) => {
+        const key = screen as ScreenKey;
+        switch (key) {
+            case 'BOOKING':
+            case 'RIDES':
+            case 'TICKET':
+            case 'PROFILE':
+            case 'EDIT_PROFILE':
+            case 'SETTINGS':
+            case 'CHANGE_PASSWORD':
+            case 'SAVED_PLACES':
+            case 'PAYMENT_METHODS':
+            case 'NOTIFICATIONS':
+            case 'HELP':
+            case 'ABOUT':
+            case 'FARE_INFO':
+                push(key, params);
+                break;
+            default:
+                break;
+        }
+    };
+
+    // The chat bubble should only float on logged-in primary screens —
+    // not on the chatbot itself, not during auth/loading, and not on
+    // full-bleed flows like TICKET (active tracking) or BOOKING (map).
+    const showChatbotBubble = Boolean(
+        user && !isLoading && !['CHATBOT', 'TICKET', 'BOOKING'].includes(currentScreen),
+    );
 
     const renderScreen = () => {
         if (isLoading) {
             return (
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#059669" />
+                <View style={[styles.loadingContainer, { backgroundColor: colors.bg }]}>
+                    <ActivityIndicator size="large" color={colors.brand} />
                 </View>
             );
         }
@@ -264,6 +301,14 @@ export default function Index() {
                 return <AboutScreen onClose={pop} />;
             case 'FARE_INFO':
                 return <FareInfoScreen onClose={pop} />;
+            case 'CHATBOT':
+                return (
+                    <ChatbotScreen
+                        user={user}
+                        onClose={pop}
+                        navigate={handleChatbotNavigate}
+                    />
+                );
 
             default:
                 return (
@@ -278,8 +323,11 @@ export default function Index() {
     };
 
     return (
-        <View style={styles.container}>
+        <View style={[styles.container, { backgroundColor: colors.bg }]}>
             {renderScreen()}
+            {showChatbotBubble && (
+                <ChatbotBubble onPress={() => push('CHATBOT')} />
+            )}
         </View>
     );
 }
@@ -287,12 +335,10 @@ export default function Index() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f8fafc'
     },
     loadingContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f8fafc',
     }
 });

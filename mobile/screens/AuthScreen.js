@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
     StyleSheet, Text, View, TextInput, TouchableOpacity,
     Alert, KeyboardAvoidingView, Platform, ScrollView,
-    ActivityIndicator, Dimensions, StatusBar,
+    ActivityIndicator,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -13,11 +13,17 @@ import Animated, {
 import { login, signup } from '../services/api';
 import ForgotPasswordScreen from './ForgotPasswordScreen';
 import HeroCanvas from '../components/HeroCanvas';
+import BrandLogo from '../components/BrandLogo';
+import { useAppTheme } from '../context/ThemeContext';
 
-const { width } = Dimensions.get('window');
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 const AuthScreen = ({ onLogin }) => {
+    const { colors, resolved } = useAppTheme();
+    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const bgGradient = resolved === 'dark'
+        ? ['#0f172a', '#1e293b', '#0f172a']
+        : ['#1e3a8a', '#1d4ed8', '#1e40af'];
     const [showForgot, setShowForgot] = useState(false);
     const [isLogin, setIsLogin] = useState(true);
     const [loading, setLoading] = useState(false);
@@ -74,10 +80,9 @@ const AuthScreen = ({ onLogin }) => {
 
     return (
         <View style={styles.outerContainer}>
-            <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
-            {/* Background Gradient */}
+            {/* Background Gradient — warm brand blue in light mode, deep slate in dark */}
             <LinearGradient
-                colors={['#0f172a', '#1e293b', '#0f172a']}
+                colors={bgGradient}
                 style={StyleSheet.absoluteFillObject}
             />
 
@@ -97,14 +102,7 @@ const AuthScreen = ({ onLogin }) => {
                 <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
                     {/* Logo Area */}
                     <Animated.View entering={FadeInDown.delay(100).springify()} style={styles.logoSection}>
-                        <View style={styles.logoBadge}>
-                            <LinearGradient
-                                colors={['#2563eb', '#1d4ed8']}
-                                style={styles.logoGradient}
-                            >
-                                <Text style={styles.logoEmoji}>🚐</Text>
-                            </LinearGradient>
-                        </View>
+                        <BrandLogo size="xl" showWordmark={false} />
                         <Text style={styles.title}>Ashland Transit</Text>
                         <Text style={styles.subtitle}>{isLogin ? 'Welcome Back' : 'Create Account'}</Text>
                     </Animated.View>
@@ -231,23 +229,15 @@ const AuthScreen = ({ onLogin }) => {
     );
 };
 
-const styles = StyleSheet.create({
-    outerContainer: { flex: 1, backgroundColor: '#0f172a' },
+const makeStyles = (c) => StyleSheet.create({
+    outerContainer: { flex: 1, backgroundColor: c.bg },
     container: { flex: 1 },
     scrollContainer: { flexGrow: 1, justifyContent: 'center', padding: 24 },
     decorCircle: { position: 'absolute', borderRadius: 999 },
 
     // Logo
     logoSection: { alignItems: 'center', marginBottom: 32 },
-    logoBadge: { marginBottom: 16 },
-    logoGradient: {
-        width: 72, height: 72, borderRadius: 22,
-        alignItems: 'center', justifyContent: 'center',
-        shadowColor: '#2563eb', shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.4, shadowRadius: 16, elevation: 8,
-    },
-    logoEmoji: { fontSize: 36 },
-    title: { fontSize: 28, fontWeight: '900', color: 'white', letterSpacing: -0.5 },
+    title: { fontSize: 28, fontWeight: '900', color: 'white', letterSpacing: -0.5, marginTop: 16 },
     subtitle: { fontSize: 16, fontWeight: '600', color: '#64748b', marginTop: 4 },
 
     // Form

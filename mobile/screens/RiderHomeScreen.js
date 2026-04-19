@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    Alert, Modal, StatusBar, Dimensions, Platform, RefreshControl,
+    Alert, Modal, Dimensions, Platform, RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import Animated, {
     FadeInDown, FadeInUp, FadeIn,
@@ -13,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { getRideHistory } from '../services/api';
 import HeroCanvas from '../components/HeroCanvas';
+import { useAppTheme } from '../context/ThemeContext';
 
 const { width } = Dimensions.get('window');
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
@@ -28,7 +30,7 @@ const STATUS_COLORS = {
 };
 
 /* ─── SKELETON LOADER ─────────────────────────────────────────────── */
-const SkeletonCard = () => {
+const SkeletonCard = ({ styles }) => {
     const opacity = useSharedValue(0.3);
     useEffect(() => {
         opacity.value = withRepeat(withTiming(1, { duration: 800, easing: Easing.inOut(Easing.ease) }), -1, true);
@@ -44,7 +46,9 @@ const SkeletonCard = () => {
 };
 
 /* ─── ACTION CHIP ─────────────────────────────────────────────────── */
-const ActionChip = ({ emoji, label, colors, onPress, delay = 0 }) => {
+// `gradient` is the 2-stop gradient passed by the call site; `styles`
+// comes from the themed factory in the parent screen.
+const ActionChip = ({ emoji, label, gradient, onPress, delay = 0, styles }) => {
     const scale = useSharedValue(1);
     const animStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
     const handlePress = () => {
@@ -58,7 +62,7 @@ const ActionChip = ({ emoji, label, colors, onPress, delay = 0 }) => {
     return (
         <Animated.View entering={FadeInDown.delay(delay).springify()} style={styles.chipWrapper}>
             <AnimatedTouchable style={animStyle} onPress={handlePress} activeOpacity={1}>
-                <LinearGradient colors={colors} style={styles.chip} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
+                <LinearGradient colors={gradient} style={styles.chip} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}>
                     <Text style={styles.chipEmoji}>{emoji}</Text>
                     <Text style={styles.chipLabel}>{label}</Text>
                 </LinearGradient>
@@ -68,7 +72,7 @@ const ActionChip = ({ emoji, label, colors, onPress, delay = 0 }) => {
 };
 
 /* ─── BOOK BUTTON ─────────────────────────────────────────────────── */
-const BookButton = ({ onPress }) => {
+const BookButton = ({ onPress, styles }) => {
     const shimmer = useSharedValue(0);
     const scale = useSharedValue(1);
     useEffect(() => {
@@ -108,7 +112,7 @@ const BookButton = ({ onPress }) => {
 };
 
 /* ─── RIDE CARD ───────────────────────────────────────────────────── */
-const RideCard = ({ item, index, onPress, onViewTicket }) => {
+const RideCard = ({ item, index, onPress, onViewTicket, styles }) => {
     const theme = STATUS_COLORS[item.status] || STATUS_COLORS.Rejected;
     const scale = useSharedValue(1);
     const scaleStyle = useAnimatedStyle(() => ({ transform: [{ scale: scale.value }] }));
@@ -174,10 +178,30 @@ const RideCard = ({ item, index, onPress, onViewTicket }) => {
     );
 };
 
+// Themed chip gradients. Light mode: the original soft pastel stops.
+// Dark mode: richer saturated tones that read on a near-black surface.
+const CHIP_GRADIENTS = {
+    light: {
+        schedule: ['#eff6ff', '#dbeafe'],
+        rides: ['#f0fdf4', '#dcfce7'],
+        fares: ['#fffbeb', '#fef3c7'],
+        sos: ['#fef2f2', '#fee2e2'],
+    },
+    dark: {
+        schedule: ['#172554', '#1e3a8a'],
+        rides: ['#052e16', '#14532d'],
+        fares: ['#451a03', '#78350f'],
+        sos: ['#450a0a', '#7f1d1d'],
+    },
+};
+
 /* ═══════════════════════════════════════════════════════════════════════
    MAIN SCREEN
    ═══════════════════════════════════════════════════════════════════════ */
 const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation, openMenu }) => {
+    const { colors, resolved } = useAppTheme();
+    const styles = useMemo(() => makeStyles(colors), [colors]);
+    const chipGradients = CHIP_GRADIENTS[resolved] || CHIP_GRADIENTS.light;
     const [rides, setRides] = useState([]);
     const [loading, setLoading] = useState(false);
     const [refreshing, setRefreshing] = useState(false);
@@ -214,13 +238,12 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
 
     return (
         <SafeAreaView style={styles.safeArea}>
-            <StatusBar barStyle="light-content" backgroundColor="#1e3a8a" />
             <ScrollView
                 style={styles.container}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
                 refreshControl={
-                    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor="#2563eb" />
+                    <RefreshControl refreshing={refreshing} onRefresh={handleRefresh} tintColor={colors.brand} />
                 }
                 scrollEventThrottle={16}
             >
@@ -327,8 +350,9 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                     <View style={[styles.section, styles.chipsRow]}>
                         <ActionChip
                             emoji="📅" label="Schedule"
-                            colors={['#eff6ff', '#dbeafe']}
+                            gradient={chipGradients.schedule}
                             delay={250}
+                            styles={styles}
                             onPress={() => {
                                 if (onBookPress) onBookPress({ scheduledMode: true });
                                 else if (navigation) navigation.navigate('RiderBookingScreen', { scheduledMode: true });
@@ -336,32 +360,38 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                         />
                         <ActionChip
                             emoji="🎫" label="My Rides"
-                            colors={['#f0fdf4', '#dcfce7']}
+                            gradient={chipGradients.rides}
                             delay={300}
+                            styles={styles}
                             onPress={() => {
                                 if (navigation) navigation.navigate('RiderRidesScreen');
                             }}
                         />
                         <ActionChip
                             emoji="💲" label="Fares"
-                            colors={['#fffbeb', '#fef3c7']}
+                            gradient={chipGradients.fares}
                             delay={350}
+                            styles={styles}
                             onPress={() => go('FARE_INFO')}
                         />
                         <ActionChip
                             emoji="🆘" label="SOS"
-                            colors={['#fef2f2', '#fee2e2']}
+                            gradient={chipGradients.sos}
                             delay={400}
+                            styles={styles}
                             onPress={() => setShowSosModal(true)}
                         />
                     </View>
 
                     {/* ── Book Button ───────────────────────────────── */}
                     <View style={styles.section}>
-                        <BookButton onPress={() => {
-                            if (onBookPress) onBookPress({ scheduledMode: false });
-                            else if (navigation) navigation.navigate('RiderBookingScreen', { scheduledMode: false });
-                        }} />
+                        <BookButton
+                            styles={styles}
+                            onPress={() => {
+                                if (onBookPress) onBookPress({ scheduledMode: false });
+                                else if (navigation) navigation.navigate('RiderBookingScreen', { scheduledMode: false });
+                            }}
+                        />
                     </View>
 
                     {/* ── Recent Activity ───────────────────────────── */}
@@ -375,9 +405,9 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
 
                         {loading ? (
                             <>
-                                <SkeletonCard />
-                                <SkeletonCard />
-                                <SkeletonCard />
+                                <SkeletonCard styles={styles} />
+                                <SkeletonCard styles={styles} />
+                                <SkeletonCard styles={styles} />
                             </>
                         ) : rides.length === 0 ? (
                             <Animated.View entering={FadeIn.delay(500)} style={styles.emptyState}>
@@ -393,6 +423,7 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                                     index={index}
                                     onPress={() => setSelectedRide(item)}
                                     onViewTicket={onViewTicket}
+                                    styles={styles}
                                 />
                             ))
                         )}
@@ -545,6 +576,7 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                             {[
                                 { icon: '👤', title: 'Profile', onPress: () => go('PROFILE') },
                                 { icon: '🎫', title: 'My Rides', onPress: () => { setShowMenu(false); navigation?.navigate('RiderRidesScreen'); } },
+                                { ionIcon: 'chatbubble-ellipses-outline', title: 'APT Assist', onPress: () => go('CHATBOT') },
                                 { icon: '📍', title: 'Saved Places', onPress: () => go('SAVED_PLACES') },
                                 { icon: '💳', title: 'Payment Methods', onPress: () => go('PAYMENT_METHODS') },
                                 { icon: '💲', title: 'APT Fares', onPress: () => go('FARE_INFO') },
@@ -559,7 +591,17 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
                                     onPress={item.onPress}
                                     activeOpacity={0.6}
                                 >
-                                    <Text style={styles.drawerItemIcon}>{item.icon}</Text>
+                                    {item.ionIcon ? (
+                                        <View style={styles.drawerItemIconWrap}>
+                                            <Ionicons
+                                                name={item.ionIcon}
+                                                size={20}
+                                                color={colors.brand}
+                                            />
+                                        </View>
+                                    ) : (
+                                        <Text style={styles.drawerItemIcon}>{item.icon}</Text>
+                                    )}
                                     <Text style={styles.drawerItemText}>{item.title}</Text>
                                     <Text style={styles.drawerItemChev}>›</Text>
                                 </TouchableOpacity>
@@ -593,9 +635,9 @@ const RiderHomeScreen = ({ user, onLogout, onBookPress, onViewTicket, navigation
    ═══════════════════════════════════════════════════════════════════════ */
 const EDGE = 20;
 
-const styles = StyleSheet.create({
-    safeArea: { flex: 1, backgroundColor: '#1e3a8a' },
-    container: { flex: 1, backgroundColor: '#f0f4f8' },
+const makeStyles = (c) => StyleSheet.create({
+    safeArea: { flex: 1, backgroundColor: '#0b1e5c' },
+    container: { flex: 1, backgroundColor: c.bg },
     scrollContent: { paddingBottom: 32 },
 
     /* ── Header ────────────────────────────────────────────────── */
@@ -712,7 +754,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.05, shadowRadius: 4, elevation: 2,
     },
     chipEmoji: { fontSize: 20, marginBottom: 4 },
-    chipLabel: { fontSize: 9, fontWeight: '800', color: '#374151', textTransform: 'uppercase', letterSpacing: 0.3 },
+    chipLabel: { fontSize: 9, fontWeight: '800', color: c.text, textTransform: 'uppercase', letterSpacing: 0.3 },
 
     /* ── Book Button ────────────────────────────────────────────── */
     bookButton: {
@@ -729,19 +771,20 @@ const styles = StyleSheet.create({
         flexDirection: 'row', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: 14,
     },
-    sectionTitle: { fontSize: 17, fontWeight: '900', color: '#1e293b' },
+    sectionTitle: { fontSize: 17, fontWeight: '900', color: c.text },
     refreshBtn: {
-        backgroundColor: '#f0fdf4', paddingVertical: 6,
+        backgroundColor: c.brandSoft, paddingVertical: 6,
         paddingHorizontal: 14, borderRadius: 10,
     },
-    refreshText: { color: '#059669', fontWeight: '800', fontSize: 11 },
+    refreshText: { color: c.brand, fontWeight: '800', fontSize: 11 },
 
     /* ── Ride Card ──────────────────────────────────────────────── */
     rideCard: {
-        backgroundColor: 'white', borderRadius: 16, marginBottom: 12,
+        backgroundColor: c.surface, borderRadius: 16, marginBottom: 12,
         flexDirection: 'row', overflow: 'hidden',
-        shadowColor: '#000', shadowOffset: { width: 0, height: 2 },
+        shadowColor: c.shadow, shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.06, shadowRadius: 8, elevation: 3,
+        borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
     },
     cardStripe: { width: 4 },
     cardContent: { flex: 1, padding: 14 },
@@ -749,7 +792,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row', justifyContent: 'space-between',
         alignItems: 'center', marginBottom: 10,
     },
-    rideDate: { fontSize: 12, color: '#64748b', fontWeight: '600' },
+    rideDate: { fontSize: 12, color: c.muted, fontWeight: '600' },
     statusBadge: {
         flexDirection: 'row', alignItems: 'center', gap: 5,
         paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
@@ -761,77 +804,78 @@ const styles = StyleSheet.create({
     routeRow: { flexDirection: 'row', alignItems: 'flex-start' },
     routeConnector: { alignItems: 'center', marginRight: 10, paddingTop: 3 },
     routeDot: { width: 8, height: 8, borderRadius: 4 },
-    routeLineVert: { width: 2, height: 14, backgroundColor: '#e2e8f0', marginVertical: 2 },
+    routeLineVert: { width: 2, height: 14, backgroundColor: c.border, marginVertical: 2 },
     routeTexts: { flex: 1, justifyContent: 'space-between', gap: 8 },
-    routeText: { fontSize: 13, fontWeight: '600', color: '#1e293b' },
+    routeText: { fontSize: 13, fontWeight: '600', color: c.text },
 
     rideFooter: {
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        paddingTop: 10, borderTopWidth: 1, borderTopColor: '#f1f5f9',
+        paddingTop: 10, borderTopWidth: 1, borderTopColor: c.border,
     },
     farePill: {
-        backgroundColor: '#0f172a', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
+        backgroundColor: c.text, paddingHorizontal: 12, paddingVertical: 5, borderRadius: 10,
     },
-    fareText: { fontSize: 14, fontWeight: '900', color: 'white' },
+    fareText: { fontSize: 14, fontWeight: '900', color: c.bg },
     rideMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    paxBadgeText: { fontSize: 12, fontWeight: '700', color: '#64748b' },
+    paxBadgeText: { fontSize: 12, fontWeight: '700', color: c.muted },
     viewTicketButton: {
         paddingVertical: 5, paddingHorizontal: 12,
-        backgroundColor: '#eff6ff', borderRadius: 8,
+        backgroundColor: c.brandSoft, borderRadius: 8,
     },
-    viewTicketText: { color: '#2563eb', fontWeight: '800', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.3 },
+    viewTicketText: { color: c.brand, fontWeight: '800', fontSize: 10, textTransform: 'uppercase', letterSpacing: 0.3 },
 
     /* ── Empty State ────────────────────────────────────────────── */
     emptyState: {
-        alignItems: 'center', padding: 40, backgroundColor: 'white',
-        borderRadius: 16, borderWidth: 2, borderColor: '#e2e8f0', borderStyle: 'dashed',
+        alignItems: 'center', padding: 40, backgroundColor: c.surface,
+        borderRadius: 16, borderWidth: 2, borderColor: c.border, borderStyle: 'dashed',
     },
     emptyEmoji: { fontSize: 44, marginBottom: 12 },
-    emptyTitle: { fontSize: 17, fontWeight: '900', color: '#1e293b', marginBottom: 4 },
-    emptyText: { color: '#94a3b8', fontWeight: '600', textAlign: 'center', fontSize: 13 },
+    emptyTitle: { fontSize: 17, fontWeight: '900', color: c.text, marginBottom: 4 },
+    emptyText: { color: c.subtle, fontWeight: '600', textAlign: 'center', fontSize: 13 },
 
     /* ── Skeleton ───────────────────────────────────────────────── */
     skeletonCard: {
-        backgroundColor: 'white', padding: 16, borderRadius: 16, marginBottom: 12,
-        shadowColor: '#000', shadowOffset: { width: 0, height: 1 },
+        backgroundColor: c.surface, padding: 16, borderRadius: 16, marginBottom: 12,
+        shadowColor: c.shadow, shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.03, shadowRadius: 4, elevation: 2,
+        borderWidth: StyleSheet.hairlineWidth, borderColor: c.border,
     },
-    skeletonLine: { height: 14, backgroundColor: '#e2e8f0', borderRadius: 8, width: '100%' },
+    skeletonLine: { height: 14, backgroundColor: c.border, borderRadius: 8, width: '100%' },
 
     /* ── Modals ─────────────────────────────────────────────────── */
-    modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
-    centeredOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', alignItems: 'center' },
+    modalOverlay: { flex: 1, backgroundColor: c.overlay, justifyContent: 'flex-end' },
+    centeredOverlay: { flex: 1, backgroundColor: c.overlay, justifyContent: 'center', alignItems: 'center' },
     detailSheet: {
-        backgroundColor: 'white', borderTopLeftRadius: 24, borderTopRightRadius: 24,
+        backgroundColor: c.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24,
         padding: 24, paddingBottom: 36, minHeight: 400,
     },
-    sheetHandle: { width: 40, height: 4, backgroundColor: '#e2e8f0', borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
+    sheetHandle: { width: 40, height: 4, backgroundColor: c.border, borderRadius: 2, alignSelf: 'center', marginBottom: 20 },
     detailHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-    detailTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a' },
-    closeBtn: { fontSize: 20, color: '#94a3b8', fontWeight: '700', padding: 4 },
+    detailTitle: { fontSize: 20, fontWeight: '900', color: c.text },
+    closeBtn: { fontSize: 20, color: c.subtle, fontWeight: '700', padding: 4 },
     detailCard: {
         flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: 20, padding: 14, backgroundColor: '#f8fafc', borderRadius: 14,
+        marginBottom: 20, padding: 14, backgroundColor: c.surfaceAlt, borderRadius: 14,
     },
-    detailTicket: { fontSize: 15, fontWeight: '800', color: '#1e293b' },
+    detailTicket: { fontSize: 15, fontWeight: '800', color: c.text },
     detailRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', paddingVertical: 12 },
-    detailLabel: { fontSize: 11, fontWeight: '700', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 0.5 },
-    detailValue: { fontSize: 14, fontWeight: '700', color: '#1e293b', maxWidth: '60%', textAlign: 'right' },
-    detailDivider: { height: 1, backgroundColor: '#f1f5f9' },
+    detailLabel: { fontSize: 11, fontWeight: '700', color: c.subtle, textTransform: 'uppercase', letterSpacing: 0.5 },
+    detailValue: { fontSize: 14, fontWeight: '700', color: c.text, maxWidth: '60%', textAlign: 'right' },
+    detailDivider: { height: 1, backgroundColor: c.border },
     closeDetailBtn: { marginTop: 24, borderRadius: 14, overflow: 'hidden' },
     closeDetailGradient: { padding: 16, alignItems: 'center', borderRadius: 14 },
     closeDetailText: { color: 'white', fontWeight: '800', fontSize: 15 },
 
     /* ── Help / SOS Modals ──────────────────────────────────────── */
     comingSoonBox: {
-        backgroundColor: 'white', marginHorizontal: 28, borderRadius: 24,
+        backgroundColor: c.surface, marginHorizontal: 28, borderRadius: 24,
         padding: 28, alignItems: 'center', overflow: 'hidden',
         width: width - 56,
     },
     modalAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
     csEmoji: { fontSize: 48, marginBottom: 12 },
-    csTitle: { fontSize: 20, fontWeight: '900', color: '#0f172a', marginBottom: 8 },
-    csMsg: { fontSize: 14, color: '#64748b', fontWeight: '600', textAlign: 'center', lineHeight: 22 },
+    csTitle: { fontSize: 20, fontWeight: '900', color: c.text, marginBottom: 8 },
+    csMsg: { fontSize: 14, color: c.muted, fontWeight: '600', textAlign: 'center', lineHeight: 22 },
     csDismiss: { marginTop: 20, borderRadius: 14, overflow: 'hidden', width: '100%' },
     csDismissGradient: { paddingVertical: 14, alignItems: 'center', borderRadius: 14 },
     csDismissText: { color: 'white', fontWeight: '800', fontSize: 15 },
@@ -853,14 +897,14 @@ const styles = StyleSheet.create({
     /* ── Side Drawer ───────────────────────────────────────────── */
     drawerBackdrop: {
         flex: 1,
-        backgroundColor: 'rgba(15,23,42,0.5)',
+        backgroundColor: c.overlay,
         flexDirection: 'row',
         justifyContent: 'flex-end',
     },
     drawer: {
         width: width * 0.82,
         maxWidth: 340,
-        backgroundColor: 'white',
+        backgroundColor: c.surface,
         borderTopLeftRadius: 24,
         borderBottomLeftRadius: 24,
         overflow: 'hidden',
@@ -888,11 +932,12 @@ const styles = StyleSheet.create({
         paddingHorizontal: 18, paddingVertical: 14,
     },
     drawerItemIcon: { fontSize: 20, width: 30 },
-    drawerItemText: { flex: 1, fontSize: 15, fontWeight: '700', color: '#0f172a' },
-    drawerItemChev: { color: '#cbd5e1', fontSize: 20, fontWeight: '500' },
-    drawerDivider: { height: 1, backgroundColor: '#e2e8f0', marginVertical: 8, marginHorizontal: 16 },
+    drawerItemIconWrap: { width: 30, alignItems: 'flex-start', justifyContent: 'center' },
+    drawerItemText: { flex: 1, fontSize: 15, fontWeight: '700', color: c.text },
+    drawerItemChev: { color: c.subtle, fontSize: 20, fontWeight: '500' },
+    drawerDivider: { height: 1, backgroundColor: c.border, marginVertical: 8, marginHorizontal: 16 },
     drawerFooter: {
-        textAlign: 'center', color: '#94a3b8',
+        textAlign: 'center', color: c.subtle,
         fontSize: 11, fontWeight: '600', marginTop: 20, lineHeight: 16,
     },
 });

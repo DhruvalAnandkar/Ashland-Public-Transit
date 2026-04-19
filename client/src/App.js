@@ -23,6 +23,7 @@ import {
   FAQPage,
   ContactPage,
 } from "./components/MarketingPages";
+import { ThemeProvider } from "./context/ThemeContext";
 
 // --- ROLE-BASED PROTECTION ---
 const RoleProtectedRoute = ({ allowedRoles, userRole, children }) => {
@@ -89,8 +90,9 @@ function App() {
   };
 
   return (
+    <ThemeProvider>
     <Router>
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 font-sans text-slate-600">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 font-sans text-slate-600 dark:text-slate-300 transition-colors duration-300">
         <LoginModal
           isOpen={isLoginModalOpen}
           onClose={() => setIsLoginModalOpen(false)}
@@ -212,6 +214,7 @@ function App() {
         <SiteFooter />
       </div>
     </Router>
+    </ThemeProvider>
   );
 }
 

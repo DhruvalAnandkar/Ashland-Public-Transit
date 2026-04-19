@@ -16,6 +16,9 @@ visibility for riders, drivers, and dispatch.
 - [What's inside](#whats-inside)
 - [Architecture](#architecture)
 - [Feature highlights](#feature-highlights)
+- [Theming (light / dark / system)](#theming-light--dark--system)
+- [APT Assist — in-app AI chatbot](#apt-assist--in-app-ai-chatbot)
+- [Brand system](#brand-system)
 - [Tech stack](#tech-stack)
 - [Quick start](#quick-start)
 - [Environment variables](#environment-variables)
@@ -83,6 +86,10 @@ visibility for riders, drivers, and dispatch.
 - Live ride tracking with driver GPS, ETA, and socket-pushed status
   transitions.
 - QR-code boarding pass + ride history.
+- **APT Assist** — in-app chatbot with FAQ answers and deep-links into
+  Book / Track / Rides / Fares screens.
+- **Light / Dark / System** theme with secure-stored preference and
+  OS-change listeners.
 - Complete profile: edit info, change password, saved places, payment
   methods (scaffolded), notifications, accessibility preferences.
 
@@ -108,9 +115,104 @@ visibility for riders, drivers, and dispatch.
 - Cinematic landing page with bounded **3D hero stage** (`@react-three/fiber`).
 - **Auto day/night palette** — the 3D scene shifts between light-sky and
   dark-city based on the viewer's local hour (06:00–18:59 = day).
+- **Light / Dark / System** theme toggle in the navbar, applied to the
+  entire public surface including a brand-blue bus marquee in light
+  mode.
 - Marketing pages: About, Services, Fares (sourced live from the fare
   calculator), Accessibility, FAQ, Contact.
 - Dual staff portal menu: _Dispatcher_ and _Driver_ login targets.
+
+---
+
+## Theming (light / dark / system)
+
+Both the public web site and the rider mobile app ship with a
+first-class **light / dark / system** theme system. Every user-facing
+surface adapts: backgrounds, typography, cards, modals, status bars,
+marquee artwork, and the login hero gradient.
+
+### Web (`client/`)
+
+- Class-based Tailwind dark mode (`darkMode: 'class'` in
+  `tailwind.config.js`).
+- Global `ThemeContext` at `client/src/context/ThemeContext.js`
+  persists the user's preference in `localStorage`, listens for
+  OS-level changes via `window.matchMedia('(prefers-color-scheme: dark)')`,
+  and applies the `dark` class on `<html>`.
+- A tiny inline script in `client/public/index.html` applies the
+  resolved theme **before React mounts**, eliminating FOUC.
+- The landing-page **bus marquee** swaps palettes automatically —
+  Ashland brand-blue in light mode, dark steel in dark mode — while the
+  separate 3D hero keeps its own time-of-day palette.
+
+> Theme scope on the web is the **public surface only**: landing,
+> marketing pages, navbar, footer, book, track, and the login modal.
+> The dispatcher / driver / fleet consoles intentionally stay on the
+> existing operator palette.
+
+### Mobile (`mobile/`)
+
+- Global `ThemeContext` at `mobile/context/ThemeContext.js` with three
+  modes: `light`, `dark`, `system`.
+- Preference persists via `expo-secure-store`; OS changes are observed
+  through `Appearance.addChangeListener`.
+- Semantic color tokens in `mobile/constants/theme.js` power a
+  `makeStyles(colors)` pattern — each screen receives a styles factory
+  so colors stay in sync.
+- Root background is pushed to the native layer via `expo-system-ui`
+  and the status bar style tracks the resolved theme through
+  `expo-status-bar`.
+- Settings screen exposes a three-button **Appearance** picker
+  (Light / Dark / System).
+
+---
+
+## APT Assist — in-app AI chatbot
+
+The rider mobile app includes **APT Assist**, a lightweight in-app
+assistant for FAQs and quick navigation.
+
+- **Surface:** floating chat bubble on core rider screens +
+  full-screen chat view.
+- **Engine:** rule-based intent classifier in
+  `mobile/utils/chatbotEngine.js`, reading from a curated knowledge
+  base at `mobile/constants/chatbotKnowledge.js`. Keyword scoring +
+  regex matching produce deterministic, offline-capable answers with
+  zero external API cost.
+- **Quick actions:** replies can deep-link into the app — e.g.
+  "Book a ride," "Track my ride," "See fares," "Call dispatch" —
+  by dispatching navigation events back into the screen stack.
+- **LLM-ready:** `getReply()` is async with a simulated typing delay,
+  so swapping in a server-side LLM endpoint later is a drop-in change.
+
+Files:
+
+```
+mobile/constants/chatbotKnowledge.js    # FAQs, intents, actions, fallback
+mobile/utils/chatbotEngine.js           # Pure classifier (no side-effects)
+mobile/screens/ChatbotScreen.js         # Full-screen chat UI
+mobile/components/ChatbotBubble.js      # Floating FAB + pulsing glow
+```
+
+---
+
+## Brand system
+
+A single brand mark is used everywhere — tab favicon, web navbar /
+footer, mobile auth screen, and mobile chatbot UI.
+
+- **Master SVGs** — `client/public/logo.svg` (square mark,
+  blue→indigo gradient tile with white bus silhouette) and
+  `client/public/logo-wordmark.svg` (horizontal lockup).
+- **Web component** — `client/src/components/BrandLogo.js` provides a
+  single reusable `<BrandLogo />` with `size`, `showWordmark`,
+  `animate`, and `tone` (`auto` / `onDark` / `onLight`) props.
+- **Mobile component** — `mobile/components/BrandLogo.js` mirrors the
+  web component using `expo-linear-gradient` + `@expo/vector-icons`
+  so the mark is crisp on any device density.
+- **Favicon / PWA manifest** — `client/public/index.html` and
+  `client/public/manifest.json` reference the SVG mark exclusively;
+  legacy React CRA favicon assets have been removed.
 
 ---
 
@@ -119,8 +221,8 @@ visibility for riders, drivers, and dispatch.
 | Layer         | Libraries                                                                                                                                          |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Backend       | Node 18+, Express 5, Mongoose 9, Socket.IO 4, JWT, bcrypt, helmet, express-rate-limit, express-mongo-sanitize, xss-clean, morgan, Stripe (scaffold) |
-| Web client    | React 19, React Router 7, Tailwind CSS 3, Framer Motion 12, Three.js + @react-three/fiber + drei, Recharts, Leaflet, @react-google-maps/api, Axios |
-| Mobile client | Expo 54, React Native 0.81, Expo Router 6, react-native-reanimated 4, react-native-maps, expo-location, expo-haptics, react-native-qrcode-svg      |
+| Web client    | React 19, React Router 7, Tailwind CSS 3 (class-based dark mode), Framer Motion 12, Three.js + @react-three/fiber + drei, Recharts, Leaflet, @react-google-maps/api, Axios |
+| Mobile client | Expo 54, React Native 0.81, Expo Router 6, react-native-reanimated 4, react-native-maps, expo-location, expo-haptics, expo-linear-gradient, expo-secure-store, expo-system-ui, @expo/vector-icons, react-native-qrcode-svg |
 | Tooling       | Create React App (client), Expo CLI (mobile), ESLint, PostCSS, Capacitor (Android wrapper scaffold)                                                |
 
 ---
@@ -309,12 +411,22 @@ booking time. Internal tests live in `server/utils/__fareTest.js`.
 .
 ├─ ai-core/                # Experimental AI/analytics prototypes
 ├─ client/                 # React web app (CRA)
-│  └─ src/components/      # DispatcherDashboard, DriverView, FleetManager,
-│                          # LandingPage, Hero3D, MarketingPages, etc.
+│  ├─ public/              # logo.svg, logo-wordmark.svg, manifest.json
+│  └─ src/
+│     ├─ components/       # DispatcherDashboard, DriverView, FleetManager,
+│     │                    # LandingPage, Hero3D, MarketingPages, BrandLogo,
+│     │                    # ThemeToggle, etc.
+│     └─ context/          # ThemeContext (light / dark / system)
 ├─ mobile/                 # Expo React Native rider app
 │  ├─ app/                 # Expo Router entry
-│  ├─ screens/             # Rider flows (booking, tracking, profile, …)
-│  └─ components/          # HeroCanvas, PlacesInput, ScreenHeader, …
+│  ├─ screens/             # Rider flows (booking, tracking, profile,
+│  │                       # ChatbotScreen, …)
+│  ├─ components/          # HeroCanvas, PlacesInput, BrandLogo,
+│  │                       # ChatbotBubble, …
+│  ├─ constants/           # theme.js (semantic tokens),
+│  │                       # chatbotKnowledge.js
+│  ├─ context/             # ThemeContext
+│  └─ utils/               # chatbotEngine.js
 ├─ server/
 │  ├─ config/db.js         # Mongoose connection
 │  ├─ controllers/         # authController, rideController

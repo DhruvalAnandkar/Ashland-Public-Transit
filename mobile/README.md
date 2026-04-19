@@ -27,6 +27,10 @@ Part of the [`Ashland-Public-Transit`](../README.md) monorepo.
   places, payment methods (scaffold), notifications, accessibility.
 - **Haptics** throughout (`expo-haptics`) for confirm / select / error
   cues that feel native.
+- **Light / Dark / System** theme with secure-store persistence and
+  live OS-change listeners.
+- **APT Assist** — in-app rule-based chatbot (floating bubble + full
+  chat view) that can deep-link into Book / Track / Rides / Fares.
 
 ---
 
@@ -37,7 +41,7 @@ app/
 ├─ _layout.tsx         Expo Router root
 └─ index.tsx           Splash / auth gate
 screens/
-├─ AuthScreen.js               Login & sign-up (with hero canvas)
+├─ AuthScreen.js               Login & sign-up (with hero canvas + BrandLogo)
 ├─ ForgotPasswordScreen.js     Password reset flow
 ├─ ChangePasswordScreen.js     In-app password change
 ├─ RiderHomeScreen.js          Home: live hero, quick actions, upcoming
@@ -45,15 +49,33 @@ screens/
 ├─ RiderTrackingScreen.js      Live map, driver GPS, ETA, status
 ├─ RiderRidesScreen.js         Ride history
 ├─ TicketScreen.js             QR boarding pass
-├─ ProfileScreen.js            Profile + stats
+├─ ProfileScreen.js            Profile + stats (APT Assist entry point)
 ├─ EditProfileScreen.js
 ├─ SavedPlacesScreen.js
 ├─ PaymentMethodsScreen.js     (Stripe scaffolded)
 ├─ NotificationsScreen.js
-├─ SettingsScreen.js
+├─ SettingsScreen.js           Appearance picker (Light / Dark / System)
 ├─ FareInfoScreen.js           Reads fare policy from /api/rides/fare-info
+├─ ChatbotScreen.js            APT Assist chat UI
 ├─ AboutScreen.js
 └─ HelpScreen.js
+
+components/
+├─ BrandLogo.js                Square mark + optional wordmark
+├─ ChatbotBubble.js            Floating FAB with pulsing glow
+├─ HeroCanvas.js               Login / home hero background
+├─ PlacesInput.js              Google Places autocomplete
+└─ ScreenHeader.js             Shared header with back/action slot
+
+constants/
+├─ theme.js                    Light & dark palettes + semantic tokens
+└─ chatbotKnowledge.js         FAQ intents, keywords, actions
+
+context/
+└─ ThemeContext.js             Provider + useAppTheme hook
+
+utils/
+└─ chatbotEngine.js            Rule-based intent classifier
 ```
 
 ---
@@ -119,6 +141,66 @@ console uses:
 
 If the socket disconnects (mobile flaky network), the tracking screen
 transparently falls back to `GET /rides/:id` every 10s.
+
+---
+
+## Theming (light / dark / system)
+
+Every core screen adapts to the active theme through a centralized
+token system.
+
+| Piece                 | Location                                                    |
+| --------------------- | ----------------------------------------------------------- |
+| Palettes + tokens     | `constants/theme.js` (`light` and `dark`)                   |
+| Provider / hook       | `context/ThemeContext.js` → `useAppTheme()`                 |
+| Persistence           | `expo-secure-store` (preference survives reinstalls)        |
+| OS change listener    | `Appearance.addChangeListener` (live-updates "system" mode) |
+| Root background       | `expo-system-ui` so the native backdrop matches             |
+| Status bar            | `expo-status-bar` style tracks the resolved theme           |
+| Appearance picker     | `screens/SettingsScreen.js` → Light / Dark / System buttons |
+
+Screens consume colors via a `makeStyles(colors)` factory:
+
+```js
+import { useAppTheme } from "../context/ThemeContext";
+
+export default function MyScreen() {
+  const { colors } = useAppTheme();
+  const styles = useMemo(() => makeStyles(colors), [colors]);
+  // …
+}
+```
+
+---
+
+## APT Assist (in-app chatbot)
+
+A lightweight assistant for FAQs, fare lookups, and quick navigation.
+
+- **Surface** — `ChatbotBubble` (floating FAB) is rendered over core
+  rider screens; tapping opens `ChatbotScreen` (full-screen chat UI
+  with bubbles, typing indicator, starter prompts, and quick replies).
+- **Engine** — `utils/chatbotEngine.js` runs a rule-based classifier
+  against `constants/chatbotKnowledge.js`. Each intent declares
+  keywords, regex patterns, one or more canned answers, and optional
+  `actions` such as `{ type: "navigate", screen: "BOOK" }` or
+  `{ type: "call", phone: DISPATCH_PHONE }`.
+- **Deep-linking** — actions bubble back to `app/index.tsx` via
+  `handleChatbotNavigate`, which uses the existing screen stack (`push`,
+  `pop`, `resetTo`) so no new navigation library is needed.
+- **LLM swap-in** — `getReply()` is async and awaits a small typing
+  delay, so replacing the engine with a server-side LLM endpoint later
+  is a one-function change.
+
+---
+
+## Brand logo
+
+`components/BrandLogo.js` renders the Ashland Public Transit mark
+(blue→indigo gradient tile with a white `Ionicons` bus glyph) and an
+optional wordmark. It mirrors the web `BrandLogo` component so the
+brand reads consistently across platforms. Used on the auth screen and
+available for any splash or marketing surface.
 
 ---
 

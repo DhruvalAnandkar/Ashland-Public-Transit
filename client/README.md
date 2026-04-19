@@ -41,7 +41,9 @@ two-column layout so copy never competes with art:
   card, telemetry grid).
 
 Below the hero, a horizontal **bus marquee** animates infinitely on a
-dashed road line — the signature motif of the brand.
+dashed road line — the signature motif of the brand. The marquee
+re-tints based on the active theme: Ashland brand-blue in light mode,
+dark steel in dark mode.
 
 ### `Hero3D` day / night mode
 
@@ -103,6 +105,56 @@ During development CRA proxies `/api` to the server on port 5000 via
 | `npm run build` | Production bundle in `build/`.                         |
 | `npm test`      | React Testing Library / Jest watcher.                  |
 | `npm run eject` | CRA eject (irreversible — not recommended).            |
+
+---
+
+## Theming (light / dark / system)
+
+The public surface supports three modes — `light`, `dark`, and
+`system` — through a small, dependency-free setup:
+
+| Piece | Location |
+| ----- | -------- |
+| Tailwind class-based dark mode | `tailwind.config.js` → `darkMode: 'class'` |
+| Global provider                | `src/context/ThemeContext.js` |
+| Toggle UI                      | Rendered in `src/components/SiteNavbar.js` |
+| FOUC prevention                | Inline `<script>` in `public/index.html` that reads `localStorage` and sets `class="dark"` on `<html>` **before React mounts** |
+
+Consumption is plain Tailwind — every public component uses `dark:`
+variants, e.g. `bg-white dark:bg-slate-900`. The `ThemeContext` exposes
+`{ preference, resolvedTheme, setPreference }` so any component can
+react to theme changes (the `BusMarquee` on the landing page does this
+to swap its palette).
+
+> The dispatcher / driver / fleet portals intentionally stay on the
+> existing operator palette — theming is opt-in, applied only to the
+> public surface.
+
+---
+
+## Brand system
+
+A single square mark and horizontal lockup power every branded
+surface.
+
+- `public/logo.svg` — square brand tile (blue→indigo gradient, white
+  bus silhouette). Used as favicon, apple-touch-icon, and PWA manifest
+  icon.
+- `public/logo-wordmark.svg` — horizontal lockup (mark + "ASHLAND
+  Transit · Public").
+- `src/components/BrandLogo.js` — reusable React component consumed by
+  `SiteNavbar` and `SiteFooter`. Props:
+
+| Prop           | Default  | Notes                                                   |
+| -------------- | -------- | ------------------------------------------------------- |
+| `size`         | `"md"`   | `"sm" \| "md" \| "lg" \| "xl"`                          |
+| `showWordmark` | `true`   | Set `false` to render just the square mark.             |
+| `animate`      | `true`   | Framer Motion entrance animation.                       |
+| `tone`         | `"auto"` | `"auto" \| "onDark" \| "onLight"` — text color adapts.  |
+
+`manifest.json` and `index.html` reference the SVG exclusively; legacy
+CRA favicon assets (`favicon.ico`, `logo192.png`, `logo512.png`) have
+been removed so browsers no longer pick up the old React mark.
 
 ---
 

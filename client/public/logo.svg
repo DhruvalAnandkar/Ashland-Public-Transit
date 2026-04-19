@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ashland Public Transit">
+  <defs>
+    <linearGradient id="apt-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="55%" stop-color="#1d4ed8"/>
+      <stop offset="100%" stop-color="#3730a3"/>
+    </linearGradient>
+    <linearGradient id="apt-shine" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="apt-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dx="0" dy="2" result="off"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.35"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Rounded tile background -->
+  <rect x="32" y="32" width="448" height="448" rx="110" fill="url(#apt-bg)"/>
+  <!-- Top gloss -->
+  <rect x="32" y="32" width="448" height="256" rx="110" fill="url(#apt-shine)"/>
+
+  <!-- Bus silhouette, centered -->
+  <g transform="translate(96 152)" filter="url(#apt-shadow)">
+    <!-- Body -->
+    <rect x="0" y="0" width="320" height="176" rx="28" fill="#ffffff"/>
+    <!-- Front windshield -->
+    <path d="M16 40 L48 22 L48 78 L16 78 Z" fill="#1d4ed8" opacity="0.92"/>
+    <!-- Side windows strip -->
+    <rect x="64" y="22" width="234" height="56" rx="10" fill="#1d4ed8" opacity="0.92"/>
+    <!-- Window dividers -->
+    <rect x="122" y="22" width="4" height="56" fill="#ffffff" opacity="0.9"/>
+    <rect x="180" y="22" width="4" height="56" fill="#ffffff" opacity="0.9"/>
+    <rect x="238" y="22" width="4" height="56" fill="#ffffff" opacity="0.9"/>
+    <!-- Accent stripe under windows -->
+    <rect x="16" y="96" width="288" height="6" rx="3" fill="#fbbf24"/>
+    <!-- Door -->
+    <rect x="230" y="108" width="54" height="52" rx="6" fill="#1d4ed8" opacity="0.25"/>
+    <!-- Headlight -->
+    <circle cx="26" cy="118" r="8" fill="#fbbf24"/>
+    <!-- Wheels (well background) -->
+    <circle cx="72" cy="176" r="30" fill="#1e1b4b"/>
+    <circle cx="252" cy="176" r="30" fill="#1e1b4b"/>
+    <circle cx="72" cy="176" r="14" fill="#e2e8f0"/>
+    <circle cx="252" cy="176" r="14" fill="#e2e8f0"/>
+  </g>
+
+  <!-- Road/ground line -->
+  <rect x="96" y="348" width="320" height="6" rx="3" fill="#ffffff" opacity="0.55"/>
+</svg>

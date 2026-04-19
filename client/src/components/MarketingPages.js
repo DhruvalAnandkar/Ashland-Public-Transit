@@ -35,8 +35,8 @@ const PageShell = ({ eyebrow, title, subtitle, accent = "blue", children }) => {
         <div className="relative pt-28 pb-20 min-h-[80vh]">
             {/* Backdrop aurora */}
             <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                <div className="absolute -top-40 -left-20 w-[520px] h-[520px] rounded-full blur-[120px] opacity-50 bg-gradient-to-br from-blue-300 via-indigo-300 to-violet-300" />
-                <div className="absolute top-40 -right-24 w-[480px] h-[480px] rounded-full blur-[120px] opacity-40 bg-gradient-to-br from-emerald-200 via-teal-200 to-sky-200" />
+                <div className="absolute -top-40 -left-20 w-[520px] h-[520px] rounded-full blur-[120px] opacity-50 dark:opacity-25 bg-gradient-to-br from-blue-300 via-indigo-300 to-violet-300 dark:from-blue-700 dark:via-indigo-700 dark:to-violet-700" />
+                <div className="absolute top-40 -right-24 w-[480px] h-[480px] rounded-full blur-[120px] opacity-40 dark:opacity-20 bg-gradient-to-br from-emerald-200 via-teal-200 to-sky-200 dark:from-emerald-800 dark:via-teal-800 dark:to-sky-800" />
             </div>
 
             <motion.section
@@ -46,11 +46,11 @@ const PageShell = ({ eyebrow, title, subtitle, accent = "blue", children }) => {
                 className="relative max-w-5xl mx-auto px-6 sm:px-8 text-center"
             >
                 {eyebrow && (
-                    <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 backdrop-blur border border-white/70 text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 mb-5 shadow-sm">
+                    <p className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/70 dark:bg-slate-900/70 backdrop-blur border border-white/70 dark:border-slate-700 text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 dark:text-blue-300 mb-5 shadow-sm">
                         <Sparkles size={11} /> {eyebrow}
                     </p>
                 )}
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 leading-[1.08]">
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-black tracking-tight text-slate-900 dark:text-slate-50 leading-[1.08]">
                     {title.split("|").map((part, i) =>
                         i % 2 === 0 ? (
                             <span key={i}>{part}</span>
@@ -65,7 +65,7 @@ const PageShell = ({ eyebrow, title, subtitle, accent = "blue", children }) => {
                     )}
                 </h1>
                 {subtitle && (
-                    <p className="mt-5 text-base md:text-lg text-slate-500 font-medium leading-relaxed max-w-2xl mx-auto">
+                    <p className="mt-5 text-base md:text-lg text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-2xl mx-auto">
                         {subtitle}
                     </p>
                 )}
@@ -84,7 +84,7 @@ const Card = ({ children, className = "", delay = 0 }) => (
         viewport={{ once: true, amount: 0.2 }}
         transition={{ duration: 0.55, delay, ease: [0.22, 1, 0.36, 1] }}
         whileHover={{ y: -4 }}
-        className={`bg-white/85 backdrop-blur-xl rounded-2xl border border-white/70 shadow-[0_10px_40px_rgba(15,23,42,0.06)] p-6 md:p-7 ${className}`}
+        className={`bg-white/85 dark:bg-slate-900/70 backdrop-blur-xl rounded-2xl border border-white/70 dark:border-slate-700 shadow-[0_10px_40px_rgba(15,23,42,0.06)] dark:shadow-[0_10px_40px_rgba(0,0,0,0.4)] p-6 md:p-7 text-slate-700 dark:text-slate-300 ${className}`}
     >
         {children}
     </motion.div>
@@ -120,7 +120,7 @@ export const AboutPage = () => (
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center mb-4 shadow-[0_10px_30px_rgba(59,130,246,0.35)]">
                         <f.Icon size={20} />
                     </div>
-                    <h3 className="text-lg font-black text-slate-800 mb-1.5">{f.title}</h3>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-1.5">{f.title}</h3>
                     <p className="text-sm text-slate-500 font-medium leading-relaxed">
                         {f.text}
                     </p>
@@ -133,7 +133,7 @@ export const AboutPage = () => (
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 mb-3">
                     What we run
                 </p>
-                <h3 className="text-2xl font-black text-slate-800">
+                <h3 className="text-2xl font-black text-slate-800 dark:text-slate-100">
                     A connected platform end to end
                 </h3>
                 <ul className="mt-4 space-y-2.5 text-sm text-slate-600 font-medium">
@@ -171,7 +171,7 @@ export const AboutPage = () => (
                             <div className={`w-9 h-9 rounded-lg ${x.tone} flex items-center justify-center`}>
                                 <x.Icon size={16} />
                             </div>
-                            <span className="text-sm font-black text-slate-700">{x.label}</span>
+                            <span className="text-sm font-black text-slate-700 dark:text-slate-200">{x.label}</span>
                         </div>
                     ))}
                 </div>
@@ -235,7 +235,7 @@ export const ServicesPage = () => (
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500 to-fuchsia-600 text-white flex items-center justify-center mb-4 shadow-[0_10px_30px_rgba(139,92,246,0.35)]">
                         <s.Icon size={20} />
                     </div>
-                    <h3 className="text-lg font-black text-slate-800 mb-1.5">{s.title}</h3>
+                    <h3 className="text-lg font-black text-slate-800 dark:text-slate-100 mb-1.5">{s.title}</h3>
                     <p className="text-sm text-slate-500 font-medium leading-relaxed flex-1">
                         {s.text}
                     </p>
@@ -281,7 +281,7 @@ export const FaresPage = () => (
                     key={r.label}
                     className="grid grid-cols-3 px-6 py-4 border-b border-slate-50 last:border-0 items-center"
                 >
-                    <p className="text-sm font-bold text-slate-700">{r.label}</p>
+                    <p className="text-sm font-bold text-slate-700 dark:text-slate-200">{r.label}</p>
                     <p className="text-center">
                         <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-100 text-emerald-700 text-sm font-black">
                             {r.s === 0 ? "FREE" : `$${r.s.toFixed(2)}`}
@@ -379,7 +379,7 @@ export const AccessibilityPage = () => (
                             <f.Icon size={18} />
                         </div>
                         <div>
-                            <h3 className="text-base font-black text-slate-800">{f.title}</h3>
+                            <h3 className="text-base font-black text-slate-800 dark:text-slate-100">{f.title}</h3>
                             <p className="text-sm text-slate-500 font-medium mt-1 leading-relaxed">
                                 {f.text}
                             </p>
@@ -464,7 +464,7 @@ export const FAQPage = () => {
                                 onClick={() => setOpen(isOpen ? -1 : i)}
                                 className="w-full flex items-center justify-between px-5 py-4 text-left"
                             >
-                                <span className="text-sm md:text-base font-black text-slate-800">
+                                <span className="text-sm md:text-base font-black text-slate-800 dark:text-slate-100">
                                     {item.q}
                                 </span>
                                 <motion.span
@@ -521,7 +521,7 @@ export const ContactPage = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">
                         Dispatch line
                     </p>
-                    <p className="text-lg font-black text-slate-800 mt-1">(419) 555-0199</p>
+                    <p className="text-lg font-black text-slate-800 dark:text-slate-100 mt-1">(419) 555-0199</p>
                     <p className="text-xs text-slate-500 font-medium mt-1">
                         Staffed during all service hours
                     </p>
@@ -533,7 +533,7 @@ export const ContactPage = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">
                         Email
                     </p>
-                    <p className="text-lg font-black text-slate-800 mt-1">
+                    <p className="text-lg font-black text-slate-800 dark:text-slate-100 mt-1">
                         transit@ashland.gov
                     </p>
                     <p className="text-xs text-slate-500 font-medium mt-1">
@@ -547,7 +547,7 @@ export const ContactPage = () => {
                     <p className="text-[10px] font-black uppercase tracking-[0.28em] text-slate-400">
                         Visit us
                     </p>
-                    <p className="text-lg font-black text-slate-800 mt-1">
+                    <p className="text-lg font-black text-slate-800 dark:text-slate-100 mt-1">
                         Ashland Transit Hub
                     </p>
                     <p className="text-xs text-slate-500 font-medium mt-1">
@@ -566,7 +566,7 @@ export const ContactPage = () => {
                             required
                             value={form.name}
                             onChange={(e) => setForm({ ...form, name: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-400 outline-none text-sm font-semibold text-slate-800"
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-500 outline-none text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         />
                     </label>
                     <label className="block">
@@ -578,7 +578,7 @@ export const ContactPage = () => {
                             type="email"
                             value={form.email}
                             onChange={(e) => setForm({ ...form, email: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-400 outline-none text-sm font-semibold text-slate-800"
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-500 outline-none text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         />
                     </label>
                     <label className="block md:col-span-2">
@@ -588,7 +588,7 @@ export const ContactPage = () => {
                         <select
                             value={form.topic}
                             onChange={(e) => setForm({ ...form, topic: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-400 outline-none text-sm font-semibold text-slate-800"
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-500 outline-none text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500"
                         >
                             <option>General</option>
                             <option>Booking help</option>
@@ -606,7 +606,7 @@ export const ContactPage = () => {
                             rows={5}
                             value={form.message}
                             onChange={(e) => setForm({ ...form, message: e.target.value })}
-                            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-blue-400 outline-none text-sm font-semibold text-slate-800 resize-none"
+                            className="w-full px-4 py-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 focus:border-blue-400 dark:focus:border-blue-500 outline-none text-sm font-semibold text-slate-800 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 resize-none"
                         />
                     </label>
                     <div className="md:col-span-2 flex items-center justify-between">

@@ -27,6 +27,7 @@ import {
 import { getVehicles } from "../services/api";
 import LeafletMap from "./LeafletMap";
 import Hero3D from "./Hero3D";
+import { useTheme } from "../context/ThemeContext";
 
 // ─── TILT CARD HOOK ──────────────────────────────────────────────
 const useTilt = (intensity = 15) => {
@@ -133,7 +134,46 @@ const AnimatedRoute = () => (
 // ═══════════════════════════════════════════════════════════════════
 // BUS MARQUEE — signature horizontal motion under the hero
 // ═══════════════════════════════════════════════════════════════════
-const BusSilhouette = ({ accent = "#3b82f6" }) => (
+// Theme-aware palettes:
+//   light mode  → Ashland brand blue bus body (warm, bright, reads as "transit")
+//   dark mode   → deep charcoal body (keeps the moody look consistent with
+//                 the dark UI, with bright cyan windows for pop).
+const BUS_PALETTES = {
+  light: {
+    body: "#1d4ed8",       // ashland brand blue
+    bodyShade: "#1e3a8a",  // deeper band for depth
+    window: "#bfdbfe",     // soft sky for windows
+    windowGlow: "#e0f2fe",
+    stripe: "#fbbf24",     // gold accent stripe
+    wheel: "#0f172a",
+    wheelHub: "#cbd5e1",
+    label: "#64748b",
+    dot: "#94a3b8",
+    road: "rgba(15,23,42,0.22)",
+    lane: "#94a3b8",
+    surface:
+      "linear-gradient(to right, transparent, rgba(255,255,255,0.7), transparent)",
+    border: "rgba(148,163,184,0.35)",
+  },
+  dark: {
+    body: "#0f172a",       // slate-900
+    bodyShade: "#020617",
+    window: "#22d3ee",     // cyan windows glow in dark mode
+    windowGlow: "#67e8f9",
+    stripe: "#38bdf8",
+    wheel: "#020617",
+    wheelHub: "#475569",
+    label: "#64748b",
+    dot: "#334155",
+    road: "rgba(148,163,184,0.25)",
+    lane: "#334155",
+    surface:
+      "linear-gradient(to right, transparent, rgba(15,23,42,0.55), transparent)",
+    border: "rgba(51,65,85,0.6)",
+  },
+};
+
+const BusSilhouette = ({ palette }) => (
   <svg
     width="150"
     height="46"
@@ -142,16 +182,18 @@ const BusSilhouette = ({ accent = "#3b82f6" }) => (
     xmlns="http://www.w3.org/2000/svg"
     className="shrink-0"
   >
+    {/* Body */}
+    <rect x="6" y="9" width="120" height="24" rx="7" fill={palette.body} />
+    {/* Front nose / driver area */}
     <rect
-      x="6"
-      y="9"
-      width="120"
-      height="24"
-      rx="7"
-      fill="currentColor"
-      className="text-slate-800"
+      x="130"
+      y="16"
+      width="8"
+      height="13"
+      rx="3"
+      fill={palette.windowGlow}
+      opacity="0.9"
     />
-    <rect x="130" y="16" width="8" height="13" rx="3" fill={accent} opacity="0.9" />
     {/* Windows */}
     {[14, 32, 50, 68, 86, 104].map((x, i) => (
       <rect
@@ -161,57 +203,71 @@ const BusSilhouette = ({ accent = "#3b82f6" }) => (
         width="12"
         height="9"
         rx="1.5"
-        fill={accent}
-        opacity="0.85"
+        fill={palette.window}
+        opacity="0.92"
       />
     ))}
-    {/* Stripe */}
-    <rect x="6" y="27" width="120" height="1.5" fill="white" opacity="0.35" />
+    {/* Accent stripe */}
+    <rect x="6" y="27" width="120" height="1.8" fill={palette.stripe} opacity="0.85" />
+    {/* Subtle lower body shade */}
+    <rect x="6" y="29" width="120" height="4" fill={palette.bodyShade} opacity="0.55" />
     {/* Wheels */}
-    <circle cx="28" cy="36" r="5.5" fill="#0f172a" />
-    <circle cx="28" cy="36" r="2.2" fill="#94a3b8" />
-    <circle cx="102" cy="36" r="5.5" fill="#0f172a" />
-    <circle cx="102" cy="36" r="2.2" fill="#94a3b8" />
+    <circle cx="28" cy="36" r="5.5" fill={palette.wheel} />
+    <circle cx="28" cy="36" r="2.2" fill={palette.wheelHub} />
+    <circle cx="102" cy="36" r="5.5" fill={palette.wheel} />
+    <circle cx="102" cy="36" r="2.2" fill={palette.wheelHub} />
   </svg>
 );
 
-const BusMarquee = () => (
-  <div
-    aria-hidden="true"
-    className="relative mt-14 md:mt-20 overflow-hidden py-6 border-y border-slate-200/60 bg-gradient-to-r from-transparent via-white/60 to-transparent"
-  >
-    {/* Road line */}
-    <div className="absolute inset-x-0 bottom-4 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
-    {/* Dashed lane */}
+const BusMarquee = () => {
+  const { resolved } = useTheme();
+  const palette = BUS_PALETTES[resolved] || BUS_PALETTES.light;
+  return (
     <div
-      className="absolute inset-x-0 bottom-[18px] h-[2px]"
-      style={{
-        backgroundImage:
-          "repeating-linear-gradient(90deg, #cbd5e1 0 16px, transparent 16px 32px)",
-      }}
-    />
-
-    <motion.div
-      className="flex items-center gap-16 whitespace-nowrap will-change-transform"
-      animate={{ x: ["0%", "-50%"] }}
-      transition={{
-        duration: 26,
-        repeat: Infinity,
-        ease: "linear",
-      }}
+      aria-hidden="true"
+      className="relative mt-14 md:mt-20 overflow-hidden py-6 border-y transition-colors duration-500"
+      style={{ borderColor: palette.border, backgroundImage: palette.surface }}
     >
-      {[...Array(12)].map((_, i) => (
-        <div key={i} className="flex items-center gap-5">
-          <BusSilhouette accent={i % 2 === 0 ? "#3b82f6" : "#60a5fa"} />
-          <span className="text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
-            Ashland Public Transit
-          </span>
-          <span className="text-slate-300">•</span>
-        </div>
-      ))}
-    </motion.div>
-  </div>
-);
+      {/* Road line */}
+      <div
+        className="absolute inset-x-0 bottom-4 h-px"
+        style={{
+          backgroundImage: `linear-gradient(90deg, transparent, ${palette.road}, transparent)`,
+        }}
+      />
+      {/* Dashed lane */}
+      <div
+        className="absolute inset-x-0 bottom-[18px] h-[2px]"
+        style={{
+          backgroundImage: `repeating-linear-gradient(90deg, ${palette.lane} 0 16px, transparent 16px 32px)`,
+        }}
+      />
+
+      <motion.div
+        className="flex items-center gap-16 whitespace-nowrap will-change-transform"
+        animate={{ x: ["0%", "-50%"] }}
+        transition={{
+          duration: 26,
+          repeat: Infinity,
+          ease: "linear",
+        }}
+      >
+        {[...Array(12)].map((_, i) => (
+          <div key={i} className="flex items-center gap-5">
+            <BusSilhouette palette={palette} />
+            <span
+              className="text-[11px] font-black uppercase tracking-[0.32em]"
+              style={{ color: palette.label }}
+            >
+              Ashland Public Transit
+            </span>
+            <span style={{ color: palette.dot }}>•</span>
+          </div>
+        ))}
+      </motion.div>
+    </div>
+  );
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // LANDING PAGE
@@ -439,7 +495,7 @@ const LandingPage = ({ onLogin }) => {
                 <motion.button
                   whileHover={{ scale: 1.03, y: -2 }}
                   whileTap={{ scale: 0.97 }}
-                  className="px-6 py-3.5 bg-white border border-slate-200 text-slate-700 font-bold text-sm rounded-2xl hover:border-slate-300 hover:shadow-md flex items-center gap-2 transition-all"
+                  className="px-6 py-3.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-bold text-sm rounded-2xl hover:border-slate-300 dark:hover:border-slate-600 hover:shadow-md flex items-center gap-2 transition-all"
                 >
                   <MapPin size={16} className="text-blue-600" /> Track Ride
                 </motion.button>
@@ -1052,7 +1108,7 @@ const LandingPage = ({ onLogin }) => {
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.96 }}
-                className="px-7 py-3 bg-white border border-slate-200 text-slate-600 font-bold text-sm rounded-xl hover:border-blue-200 transition-colors flex items-center gap-2"
+                className="px-7 py-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold text-sm rounded-xl hover:border-blue-200 dark:hover:border-blue-700 transition-colors flex items-center gap-2"
               >
                 <MapPin size={16} className="text-blue-500" /> Track Ticket
               </motion.button>
