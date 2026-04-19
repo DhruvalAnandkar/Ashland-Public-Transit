@@ -26,6 +26,7 @@ import {
 } from "framer-motion";
 import { getVehicles } from "../services/api";
 import LeafletMap from "./LeafletMap";
+import Hero3D from "./Hero3D";
 
 // ─── TILT CARD HOOK ──────────────────────────────────────────────
 const useTilt = (intensity = 15) => {
@@ -95,57 +96,6 @@ const AnimatedNum = ({ target, suffix = "", duration = 1.8 }) => {
   );
 };
 
-// ─── TRANSIT VEHICLE SVG ─────────────────────────────────────────
-const TransitBusSVG = () => (
-  <svg
-    width="80"
-    height="40"
-    viewBox="0 0 80 40"
-    fill="none"
-    className="transit-vehicle"
-  >
-    <rect x="5" y="8" width="65" height="22" rx="6" fill="#2563eb" />
-    <rect
-      x="8"
-      y="12"
-      width="10"
-      height="8"
-      rx="2"
-      fill="rgba(255,255,255,0.85)"
-    />
-    <rect
-      x="22"
-      y="12"
-      width="10"
-      height="8"
-      rx="2"
-      fill="rgba(255,255,255,0.85)"
-    />
-    <rect
-      x="36"
-      y="12"
-      width="10"
-      height="8"
-      rx="2"
-      fill="rgba(255,255,255,0.85)"
-    />
-    <rect
-      x="50"
-      y="12"
-      width="14"
-      height="14"
-      rx="2"
-      fill="rgba(255,255,255,0.6)"
-    />
-    <circle cx="20" cy="32" r="5" fill="#1e293b" />
-    <circle cx="20" cy="32" r="2.5" fill="#94a3b8" />
-    <circle cx="55" cy="32" r="5" fill="#1e293b" />
-    <circle cx="55" cy="32" r="2.5" fill="#94a3b8" />
-    <rect x="68" y="14" width="4" height="6" rx="1" fill="#f59e0b" />
-    <rect x="3" y="14" width="4" height="6" rx="1" fill="#ef4444" />
-  </svg>
-);
-
 // ─── ANIMATED ROUTE SVG ──────────────────────────────────────────
 const AnimatedRoute = () => (
   <svg
@@ -178,6 +128,89 @@ const AnimatedRoute = () => (
       style={{ animationDelay: "1s" }}
     />
   </svg>
+);
+
+// ═══════════════════════════════════════════════════════════════════
+// BUS MARQUEE — signature horizontal motion under the hero
+// ═══════════════════════════════════════════════════════════════════
+const BusSilhouette = ({ accent = "#3b82f6" }) => (
+  <svg
+    width="150"
+    height="46"
+    viewBox="0 0 150 46"
+    fill="none"
+    xmlns="http://www.w3.org/2000/svg"
+    className="shrink-0"
+  >
+    <rect
+      x="6"
+      y="9"
+      width="120"
+      height="24"
+      rx="7"
+      fill="currentColor"
+      className="text-slate-800"
+    />
+    <rect x="130" y="16" width="8" height="13" rx="3" fill={accent} opacity="0.9" />
+    {/* Windows */}
+    {[14, 32, 50, 68, 86, 104].map((x, i) => (
+      <rect
+        key={i}
+        x={x}
+        y="14"
+        width="12"
+        height="9"
+        rx="1.5"
+        fill={accent}
+        opacity="0.85"
+      />
+    ))}
+    {/* Stripe */}
+    <rect x="6" y="27" width="120" height="1.5" fill="white" opacity="0.35" />
+    {/* Wheels */}
+    <circle cx="28" cy="36" r="5.5" fill="#0f172a" />
+    <circle cx="28" cy="36" r="2.2" fill="#94a3b8" />
+    <circle cx="102" cy="36" r="5.5" fill="#0f172a" />
+    <circle cx="102" cy="36" r="2.2" fill="#94a3b8" />
+  </svg>
+);
+
+const BusMarquee = () => (
+  <div
+    aria-hidden="true"
+    className="relative mt-14 md:mt-20 overflow-hidden py-6 border-y border-slate-200/60 bg-gradient-to-r from-transparent via-white/60 to-transparent"
+  >
+    {/* Road line */}
+    <div className="absolute inset-x-0 bottom-4 h-px bg-gradient-to-r from-transparent via-slate-300 to-transparent" />
+    {/* Dashed lane */}
+    <div
+      className="absolute inset-x-0 bottom-[18px] h-[2px]"
+      style={{
+        backgroundImage:
+          "repeating-linear-gradient(90deg, #cbd5e1 0 16px, transparent 16px 32px)",
+      }}
+    />
+
+    <motion.div
+      className="flex items-center gap-16 whitespace-nowrap will-change-transform"
+      animate={{ x: ["0%", "-50%"] }}
+      transition={{
+        duration: 26,
+        repeat: Infinity,
+        ease: "linear",
+      }}
+    >
+      {[...Array(12)].map((_, i) => (
+        <div key={i} className="flex items-center gap-5">
+          <BusSilhouette accent={i % 2 === 0 ? "#3b82f6" : "#60a5fa"} />
+          <span className="text-[11px] font-black uppercase tracking-[0.32em] text-slate-400">
+            Ashland Public Transit
+          </span>
+          <span className="text-slate-300">•</span>
+        </div>
+      ))}
+    </motion.div>
+  </div>
 );
 
 // ═══════════════════════════════════════════════════════════════════
@@ -336,248 +369,355 @@ const LandingPage = ({ onLogin }) => {
         <div className="grid-overlay" />
       </div>
 
-      {/* ═══ ANIMATED TRANSIT VEHICLE ══════════════════════════════ */}
-      <div className="fixed bottom-8 left-0 w-full z-10 pointer-events-none opacity-25">
-        <TransitBusSVG />
-      </div>
-
-      {/* ═══ HERO SECTION ══════════════════════════════════════════ */}
+      {/* ═══ HERO — professional two-column layout ════════════════ */}
       <motion.section
         style={{ y: heroY, scale: heroScale }}
-        className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 pt-4 pb-6 md:pt-10 md:pb-12 z-10"
+        className="relative w-full z-10 pt-6 pb-10 md:pt-10 md:pb-16"
       >
-        <div className="grid md:grid-cols-5 gap-10 lg:gap-14 items-center">
-          {/* ── Left Column (3/5) ─────────────────────────────── */}
-          <div className="md:col-span-3 space-y-7">
-            {/* Live Badge */}
-            <motion.div
-              initial={{ opacity: 0, y: 20, scale: 0.9 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            >
-              <div className="badge-float inline-flex items-center gap-2.5 px-5 py-2.5 glass-panel rounded-full text-xs font-bold uppercase tracking-widest text-blue-600">
-                <span className="relative flex h-2.5 w-2.5 live-dot text-blue-500">
-                  <span className="inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-                </span>
-                Live Transit System
-                <Sparkles size={14} className="text-blue-400" />
-              </div>
-            </motion.div>
+        <div className="relative max-w-7xl mx-auto px-5 sm:px-8 grid lg:grid-cols-12 gap-10 lg:gap-8 items-center">
 
-            {/* Hero Headline — 3D animated gradient */}
+          {/* ── LEFT: copy column ─────────────────────────────── */}
+          <div className="lg:col-span-6 xl:col-span-6 relative z-[2]">
+            {/* Eyebrow */}
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.3 }}
-              className="perspective-800"
-            >
-              <motion.h1
-                initial={{ rotateX: 30, y: 40, opacity: 0 }}
-                animate={{ rotateX: 0, y: 0, opacity: 1 }}
-                transition={{
-                  duration: 1,
-                  ease: [0.22, 1, 0.36, 1],
-                  delay: 0.15,
-                }}
-                className="text-5xl md:text-6xl lg:text-7xl font-black leading-[1.05] tracking-tight"
-                style={{ transformStyle: "preserve-3d" }}
-              >
-                <motion.span
-                  style={
-                    enableMotionFx ? { x: springMX, y: springMY } : undefined
-                  }
-                  className="inline-block text-slate-800"
-                >
-                  Ashland
-                </motion.span>
-                <br />
-                <span className="text-gradient-hero">Transit</span>
-              </motion.h1>
-              <motion.p
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.7, delay: 0.4, ease: "easeOut" }}
-                className="text-xl md:text-2xl font-extrabold text-slate-500 mt-2 tracking-tight"
-              >
-                Command Center
-              </motion.p>
-            </motion.div>
-
-            {/* Subtitle */}
-            <motion.p
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 14 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.7, delay: 0.5 }}
-              className="text-base md:text-lg text-slate-500 font-medium leading-relaxed max-w-xl"
+              transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="inline-flex items-center gap-2.5 px-3.5 py-1.5 glass-panel rounded-full text-[10px] font-black uppercase tracking-[0.28em] text-slate-600 mb-6"
             >
-              The smart, reliable, and accessible way to move around Ashland.
-              Book rides in seconds, track in real-time, travel with total
-              confidence.
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+              </span>
+              Live · Ashland, Ohio
+            </motion.div>
+
+            {/* Headline */}
+            <motion.h1
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.9, ease: [0.22, 1, 0.36, 1], delay: 0.1 }}
+              className="font-black leading-[1.02] tracking-[-0.02em] text-slate-900"
+              style={{
+                fontSize: "clamp(2.5rem, 5vw, 4.2rem)",
+              }}
+            >
+              Public transit,{" "}
+              <span className="text-gradient-hero">rebuilt for real life.</span>
+            </motion.h1>
+
+            {/* Sub */}
+            <motion.p
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, delay: 0.3 }}
+              className="mt-6 text-base md:text-lg text-slate-500 font-medium leading-relaxed max-w-xl"
+            >
+              Book a ride in under a minute. Watch your bus approach on a live
+              map. Travel with humans in dispatch keeping every trip on track —
+              across every corner of Ashland.
             </motion.p>
 
-            {/* CTA Buttons */}
+            {/* CTAs */}
             <motion.div
-              initial={{ opacity: 0, y: 20 }}
+              initial={{ opacity: 0, y: 16 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.65 }}
-              className="flex gap-3 flex-wrap"
+              transition={{ duration: 0.7, delay: 0.45 }}
+              className="mt-8 flex gap-3 flex-wrap"
             >
               <Link to="/book">
                 <motion.button
-                  whileHover={{ scale: 1.05, y: -3 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="cta-primary px-9 py-4 bg-gradient-to-r from-blue-600 via-blue-700 to-blue-800 text-white font-black text-sm rounded-2xl shadow-xl shadow-blue-600/20 flex items-center gap-2.5 transition-all"
+                  whileHover={{ scale: 1.04, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="px-8 py-3.5 bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-700 text-white font-black text-sm rounded-2xl shadow-[0_14px_40px_rgba(37,99,235,0.35)] hover:shadow-[0_20px_50px_rgba(37,99,235,0.5)] flex items-center gap-2 transition-shadow"
                 >
-                  Book a Ride <ArrowRight size={18} strokeWidth={2.5} />
+                  Book a Ride <ArrowRight size={17} strokeWidth={2.5} />
                 </motion.button>
               </Link>
 
               <Link to="/track">
                 <motion.button
-                  whileHover={{ scale: 1.04, y: -2 }}
-                  whileTap={{ scale: 0.96 }}
-                  className="glass-panel px-7 py-4 text-slate-600 font-bold text-sm rounded-2xl hover:shadow-xl transition-all flex items-center gap-2"
+                  whileHover={{ scale: 1.03, y: -2 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="px-6 py-3.5 bg-white border border-slate-200 text-slate-700 font-bold text-sm rounded-2xl hover:border-slate-300 hover:shadow-md flex items-center gap-2 transition-all"
                 >
-                  <MapPin size={18} className="text-blue-500" />
-                  Track Ride
+                  <MapPin size={16} className="text-blue-600" /> Track Ride
                 </motion.button>
               </Link>
 
               <motion.button
                 onClick={handleStaffAccess}
-                whileHover={{ scale: 1.04, y: -2 }}
-                whileTap={{ scale: 0.96 }}
-                className="glass-panel px-7 py-4 text-slate-400 font-bold text-sm rounded-2xl hover:shadow-xl hover:text-slate-600 transition-all flex items-center gap-2"
+                whileHover={{ scale: 1.03, y: -2 }}
+                whileTap={{ scale: 0.97 }}
+                className="px-6 py-3.5 bg-white/70 backdrop-blur border border-slate-200 text-slate-500 font-bold text-sm rounded-2xl hover:text-slate-700 hover:border-slate-300 flex items-center gap-2 transition-all"
               >
-                <ShieldCheck size={18} /> Staff Portal
+                <ShieldCheck size={16} /> Staff Portal
               </motion.button>
             </motion.div>
 
-            {/* Trust Badges */}
+            {/* Trust row */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              transition={{ delay: 1 }}
-              className="flex items-center gap-5 pt-2"
+              transition={{ delay: 0.85 }}
+              className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-lg"
             >
               {[
-                { icon: Radio, text: "24/7 Dispatch" },
-                { icon: Shield, text: "Fully Insured" },
-                { icon: Users, text: "ADA Accessible" },
-              ].map((badge, i) => (
-                <div
+                { icon: Radio, label: "Live dispatch", sub: "Humans on deck" },
+                { icon: Shield, label: "Insured fleet", sub: "City-verified" },
+                { icon: Users, label: "ADA ready", sub: "Every vehicle" },
+                { icon: Clock, label: "Mon–Sat", sub: "6 AM – 9 PM" },
+              ].map((t, i) => (
+                <motion.div
                   key={i}
-                  className="flex items-center gap-1.5 text-slate-400"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.95 + i * 0.06 }}
+                  className="flex items-start gap-2"
                 >
-                  <badge.icon size={14} />
-                  <span className="text-[11px] font-bold uppercase tracking-wider">
-                    {badge.text}
-                  </span>
-                </div>
+                  <t.icon size={14} className="text-slate-400 mt-0.5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-[11px] font-black text-slate-700 uppercase tracking-wider leading-tight">
+                      {t.label}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                      {t.sub}
+                    </p>
+                  </div>
+                </motion.div>
               ))}
             </motion.div>
           </div>
 
-          {/* ── Right Column (2/5) — Map ──────────────────────── */}
-          <motion.div
-            initial={{ opacity: 0, x: 40, rotateY: -10 }}
-            animate={{ opacity: 1, x: 0, rotateY: 0 }}
-            transition={{ duration: 0.9, delay: 0.3, ease: [0.22, 1, 0.36, 1] }}
-            className="md:col-span-2 relative hidden md:block perspective-1200"
-          >
+          {/* ── RIGHT: bounded 3D stage ───────────────────────── */}
+          <div className="lg:col-span-6 xl:col-span-6 relative z-[1]">
             <motion.div
-              ref={mapTilt.ref}
-              onMouseMove={mapTilt.onMouseMove}
-              onMouseLeave={mapTilt.onMouseLeave}
-              style={{ rotateX: mapTilt.rotateX, rotateY: mapTilt.rotateY }}
-              className="tilt-card relative"
+              initial={{ opacity: 0, scale: 0.96, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              transition={{ duration: 1.0, ease: [0.22, 1, 0.36, 1], delay: 0.2 }}
+              className="relative rounded-3xl overflow-hidden ring-1 ring-slate-900/10 shadow-[0_30px_80px_-20px_rgba(15,23,42,0.35)] bg-slate-900"
+              style={{ height: "clamp(380px, 52vw, 560px)" }}
             >
-              <div className="map-float-3d rounded-2xl overflow-hidden shadow-2xl shadow-blue-900/15 ring-1 ring-white/50">
-                <LeafletMap className="h-80 w-full" />
+              {/* The 3D scene is fully contained inside this stage */}
+              <div className="absolute inset-0">
+                <Hero3D />
               </div>
 
-              {/* Animated Route Overlay */}
-              <AnimatedRoute />
-
-              {/* Gradient overlay for depth */}
+              {/* Subtle edge gradient bottom to fade into body */}
               <div
-                className="absolute inset-0 rounded-2xl pointer-events-none"
+                className="absolute inset-x-0 bottom-0 h-24 pointer-events-none"
                 style={{
                   background:
-                    "linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(248,250,255,0.6) 100%)",
+                    "linear-gradient(180deg, transparent 0%, rgba(5,11,24,0.6) 100%)",
                 }}
               />
-            </motion.div>
 
-            {/* Floating Fleet Card */}
-            <motion.div
-              initial={{ opacity: 0, y: 30, scale: 0.85 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{
-                delay: 1.1,
-                duration: 0.6,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              whileHover={{ scale: 1.06, y: -4 }}
-              className="absolute -bottom-4 -left-4 glass-panel-strong p-4 pr-6 rounded-2xl shadow-xl cursor-default"
-            >
-              <div className="flex items-center gap-3">
-                <motion.div
-                  animate={{ scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] }}
-                  transition={{
-                    duration: 4,
-                    repeat: Infinity,
-                    ease: "easeInOut",
-                  }}
-                  className="w-11 h-11 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center"
-                >
-                  <Bus size={20} />
-                </motion.div>
-                <div>
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+              {/* ─ HUD overlays pinned to the stage ─ */}
+              {/* Top-left: status */}
+              <motion.div
+                initial={{ opacity: 0, y: -12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.9, duration: 0.5 }}
+                className="absolute top-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 backdrop-blur-md border border-white/15"
+              >
+                <span className="relative flex h-1.5 w-1.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-80" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-400" />
+                </span>
+                <span className="text-[9px] font-black uppercase tracking-[0.22em] text-white/90">
+                  Live telemetry
+                </span>
+              </motion.div>
+
+              {/* Top-right: Fleet */}
+              <motion.div
+                initial={{ opacity: 0, y: -12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.0, duration: 0.5 }}
+                className="absolute top-4 right-4 flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/15"
+              >
+                <Bus size={14} className="text-emerald-300" />
+                <div className="leading-tight">
+                  <p className="text-[8px] font-black uppercase tracking-[0.22em] text-white/60">
                     Fleet
                   </p>
-                  <p className="text-xl font-black text-slate-800 tracking-tight">
+                  <p className="text-xs font-black text-white tracking-tight">
                     <AnimatedNum target={activeCount} />{" "}
-                    <span className="text-xs font-bold text-slate-400">
+                    <span className="text-[9px] font-semibold text-white/70">
                       active
                     </span>
                   </p>
                 </div>
-              </div>
-            </motion.div>
+              </motion.div>
 
-            {/* Status Pill */}
-            <motion.div
-              initial={{ opacity: 0, x: 20, scale: 0.85 }}
-              animate={{ opacity: 1, x: 0, scale: 1 }}
-              transition={{
-                delay: 1.4,
-                duration: 0.5,
-                ease: [0.22, 1, 0.36, 1],
-              }}
-              className="absolute -top-3 -right-3 glass-panel-strong px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
-            >
-              <span className="relative flex h-2 w-2 live-dot text-emerald-500">
-                <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[11px] font-bold text-emerald-600 tracking-wide">
-                Systems Online
-              </span>
+              {/* Bottom-left: Route card */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.15, duration: 0.55 }}
+                className="absolute bottom-4 left-4 w-[220px] rounded-xl bg-white/10 backdrop-blur-md border border-white/15 p-3"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-blue-200">
+                    Route ASH-04
+                  </span>
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-300 flex items-center gap-1">
+                    <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                    On time
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5">
+                  <div className="flex flex-col items-center gap-0.5 pt-0.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 ring-[3px] ring-emerald-500/20" />
+                    <span className="w-px h-5 bg-white/20" />
+                    <span className="w-2 h-2 rounded-full bg-red-400 ring-[3px] ring-red-500/20" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[10px] font-black text-white truncate">
+                      Claremont & Main
+                    </p>
+                    <p className="text-[9px] font-black text-white truncate mt-2">
+                      Ashland Medical
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-2.5 pt-2.5 border-t border-white/10 flex items-center justify-between">
+                  <span className="text-[9px] font-black text-white/60 uppercase tracking-widest">
+                    ETA
+                  </span>
+                  <span className="text-xs font-black text-white">
+                    <AnimatedNum target={4} />{" "}
+                    <span className="text-[9px] font-semibold text-white/70">
+                      min
+                    </span>
+                  </span>
+                </div>
+              </motion.div>
+
+              {/* Bottom-right: telemetry grid */}
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 1.25, duration: 0.55 }}
+                className="absolute bottom-4 right-4 w-[170px] rounded-xl bg-white/10 backdrop-blur-md border border-white/15 p-2.5"
+              >
+                <p className="text-[8px] font-black uppercase tracking-[0.22em] text-blue-200 mb-1.5">
+                  Telemetry
+                </p>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { l: "Speed", v: "24 mph" },
+                    { l: "GPS", v: "Lock" },
+                    { l: "Stops", v: "3 left" },
+                    { l: "Signal", v: "5G" },
+                  ].map((k) => (
+                    <div
+                      key={k.l}
+                      className="rounded-md bg-white/5 border border-white/10 px-2 py-1"
+                    >
+                      <p className="text-[7px] font-black uppercase tracking-widest text-white/60 leading-none">
+                        {k.l}
+                      </p>
+                      <p className="text-[10px] font-black text-white mt-0.5">
+                        {k.v}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
             </motion.div>
-          </motion.div>
+          </div>
         </div>
 
-        {/* Scroll Indicator */}
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1.8 }}
-          className="hidden md:flex justify-center mt-10"
-        >
-          <div className="scroll-mouse" />
-        </motion.div>
+        {/* ── Horizontal scrolling bus marquee (signature motion) ── */}
+        <BusMarquee />
       </motion.section>
+
+      {/* ═══ LIVE MAP SECTION ══════════════════════════════════════ */}
+      <section className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 py-16 z-10">
+        <div className="text-center mb-8">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 mb-3">
+            Live map
+          </p>
+          <h2 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight">
+            Every vehicle, <span className="text-gradient-hero">on one map</span>
+          </h2>
+          <p className="text-slate-500 text-sm font-medium mt-3 max-w-lg mx-auto leading-relaxed">
+            Our dispatchers watch the whole fleet in real time. You get the same
+            clarity in the palm of your hand.
+          </p>
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ amount: 0.2, margin: "-80px" }}
+          transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+          className="relative perspective-1200"
+        >
+          <motion.div
+            ref={mapTilt.ref}
+            onMouseMove={mapTilt.onMouseMove}
+            onMouseLeave={mapTilt.onMouseLeave}
+            style={{ rotateX: mapTilt.rotateX, rotateY: mapTilt.rotateY }}
+            className="tilt-card relative"
+          >
+            <div className="map-float-3d rounded-3xl overflow-hidden shadow-2xl shadow-blue-900/15 ring-1 ring-white/50">
+              <LeafletMap className="h-[420px] w-full" />
+            </div>
+            <AnimatedRoute />
+            <div
+              className="absolute inset-0 rounded-3xl pointer-events-none"
+              style={{
+                background:
+                  "linear-gradient(180deg, rgba(255,255,255,0) 60%, rgba(248,250,255,0.55) 100%)",
+              }}
+            />
+          </motion.div>
+
+          {/* Floating fleet + systems card on map */}
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.9 }}
+            whileInView={{ opacity: 1, y: 0, scale: 1 }}
+            viewport={{ amount: 0.2, margin: "-80px" }}
+            transition={{ delay: 0.2, duration: 0.6 }}
+            whileHover={{ scale: 1.04, y: -3 }}
+            className="absolute -bottom-5 left-5 glass-panel-strong p-4 pr-5 rounded-2xl shadow-xl"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-emerald-50 text-emerald-600 rounded-xl flex items-center justify-center">
+                <Bus size={18} />
+              </div>
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                  Fleet
+                </p>
+                <p className="text-lg font-black text-slate-800 tracking-tight">
+                  <AnimatedNum target={activeCount} />{" "}
+                  <span className="text-[10px] font-bold text-slate-400">
+                    active
+                  </span>
+                </p>
+              </div>
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 20, scale: 0.9 }}
+            whileInView={{ opacity: 1, x: 0, scale: 1 }}
+            viewport={{ amount: 0.2, margin: "-80px" }}
+            transition={{ delay: 0.3, duration: 0.55 }}
+            className="absolute -top-3 right-5 glass-panel-strong px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2"
+          >
+            <span className="relative flex h-2 w-2 live-dot text-emerald-500">
+              <span className="inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span className="text-[11px] font-bold text-emerald-600 tracking-wide">
+              Systems Online
+            </span>
+          </motion.div>
+        </motion.div>
+      </section>
 
       {/* ═══ DIVIDER ═══════════════════════════════════════════════ */}
       <div className="w-full max-w-5xl mx-auto px-8 z-10">
@@ -592,7 +732,7 @@ const LandingPage = ({ onLogin }) => {
               key={stat.label}
               initial={{ opacity: 0, y: 30, scale: 0.9 }}
               whileInView={{ opacity: 1, y: 0, scale: 1 }}
-              viewport={{ once: true, amount: 0.3 }}
+              viewport={{ amount: 0.3, margin: "-80px" }}
               transition={{
                 delay: idx * 0.1,
                 duration: 0.6,
@@ -624,7 +764,7 @@ const LandingPage = ({ onLogin }) => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
+          viewport={{ amount: 0.2, margin: "-80px" }}
           transition={{ duration: 0.6 }}
           className="text-center mb-10"
         >
@@ -649,7 +789,7 @@ const LandingPage = ({ onLogin }) => {
                 style={{ rotateX: tilt.rotateX, rotateY: tilt.rotateY }}
                 initial={{ opacity: 0, y: 40 }}
                 whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.3 }}
+                viewport={{ amount: 0.3, margin: "-80px" }}
                 transition={{
                   delay: idx * 0.12,
                   duration: 0.65,
@@ -680,6 +820,204 @@ const LandingPage = ({ onLogin }) => {
         </div>
       </section>
 
+      {/* ═══ HOW IT WORKS — scroll-linked 3-step ═══════════════════ */}
+      <section className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 py-14 z-10">
+        <div className="text-center mb-10">
+          <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 mb-3">
+            How it works
+          </p>
+          <h2 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight">
+            Three taps to <span className="text-gradient-hero">your ride</span>
+          </h2>
+        </div>
+
+        <div className="grid md:grid-cols-3 gap-5 relative">
+          {/* connecting line */}
+          <div className="absolute top-[56px] left-[16%] right-[16%] h-0.5 bg-gradient-to-r from-blue-200 via-indigo-300 to-violet-200 hidden md:block" />
+          {[
+            {
+              n: "01",
+              title: "Book",
+              text: "Pick your pickup, drop-off, and time. The app estimates your fare instantly using the official Ashland rate card.",
+              tone: "from-blue-500 to-indigo-600",
+              ring: "ring-blue-100",
+            },
+            {
+              n: "02",
+              title: "Track",
+              text: "Dispatch assigns a driver. Your ticket lights up with the vehicle, driver name, and a live map you can follow.",
+              tone: "from-indigo-500 to-violet-600",
+              ring: "ring-indigo-100",
+            },
+            {
+              n: "03",
+              title: "Ride",
+              text: "Meet your driver at the curb. Rate the trip, grab a receipt, and save the route for next time — all from your phone.",
+              tone: "from-violet-500 to-fuchsia-600",
+              ring: "ring-violet-100",
+            },
+          ].map((step, i) => (
+            <motion.div
+              key={step.n}
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ amount: 0.3, margin: "-80px" }}
+              transition={{ delay: i * 0.12, duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
+              className="relative"
+            >
+              <div
+                className={`mx-auto w-28 h-28 rounded-3xl bg-gradient-to-br ${step.tone} text-white font-black text-3xl flex items-center justify-center shadow-[0_20px_50px_rgba(99,102,241,0.35)] ring-8 ${step.ring}`}
+              >
+                {step.n}
+              </div>
+              <div className="mt-5 text-center glass-panel-strong rounded-2xl p-5">
+                <h3 className="text-lg font-black text-slate-800 mb-1.5">
+                  {step.title}
+                </h3>
+                <p className="text-sm text-slate-500 font-medium leading-relaxed">
+                  {step.text}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* ═══ LIVE OPS PREVIEW — marketing ticker ══════════════════ */}
+      <section className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 py-10 z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ amount: 0.2, margin: "-80px" }}
+          transition={{ duration: 0.6 }}
+          className="relative overflow-hidden rounded-3xl border border-white/70 glass-panel-strong p-8 md:p-10"
+        >
+          <div className="absolute -top-32 -right-32 w-80 h-80 bg-blue-400/20 rounded-full blur-3xl" />
+          <div className="absolute -bottom-32 -left-32 w-80 h-80 bg-emerald-400/20 rounded-full blur-3xl" />
+
+          <div className="relative grid lg:grid-cols-5 gap-8 items-center">
+            <div className="lg:col-span-3">
+              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-600 mb-3 flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                Operations in real-time
+              </p>
+              <h3 className="text-3xl md:text-4xl font-black text-slate-800 tracking-tight leading-tight">
+                Your ride lives on a{" "}
+                <span className="text-gradient-hero">live map</span>.
+              </h3>
+              <p className="mt-3 text-slate-500 font-medium leading-relaxed max-w-lg">
+                Dispatchers see every vehicle, every rider, and every minute.
+                You see the same clarity in your pocket — ETA, driver, vehicle
+                plate, and a moving dot that never stops telling the truth.
+              </p>
+              <div className="mt-5 grid grid-cols-3 gap-3 max-w-md">
+                {[
+                  { label: "GPS refresh", value: "5 s" },
+                  { label: "Dispatch uptime", value: "99.9%" },
+                  { label: "ETA accuracy", value: "±1 min" },
+                ].map((k) => (
+                  <div
+                    key={k.label}
+                    className="rounded-xl border border-slate-100 bg-white/70 p-3"
+                  >
+                    <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                      {k.label}
+                    </p>
+                    <p className="text-lg font-black text-slate-800 mt-0.5">{k.value}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="lg:col-span-2">
+              <div className="rounded-2xl border border-white/80 bg-white/60 backdrop-blur-xl p-4 shadow-xl">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                    Live ticker
+                  </span>
+                  <span className="text-[10px] font-black uppercase tracking-widest text-emerald-600 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    Streaming
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  {[
+                    { t: "Just now", m: "Van #3 en-route to Claremont Ave" },
+                    { t: "12 s ago", m: "New rider booked for 3:45 PM" },
+                    { t: "41 s ago", m: "Driver Mike started shift" },
+                    { t: "1 min ago", m: "Ride #ASH-4281 completed" },
+                  ].map((row, i) => (
+                    <motion.div
+                      key={i}
+                      initial={{ opacity: 0, x: -10 }}
+                      whileInView={{ opacity: 1, x: 0 }}
+                      viewport={{ amount: 0.2, margin: "-80px" }}
+                      transition={{ delay: i * 0.1 }}
+                      className="flex items-center gap-3 p-2 rounded-lg bg-white/70 border border-slate-100"
+                    >
+                      <span className="text-[10px] font-black uppercase tracking-widest text-blue-500 w-16 shrink-0">
+                        {row.t}
+                      </span>
+                      <span className="text-xs font-bold text-slate-700 truncate">
+                        {row.m}
+                      </span>
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      </section>
+
+      {/* ═══ VOICES STRIP (subtle social proof) ════════════════════ */}
+      <section className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 py-10 z-10">
+        <div className="grid md:grid-cols-3 gap-4">
+          {[
+            {
+              q: "My mom can book her own rides now and we can watch her get home. Peace of mind in an app.",
+              a: "— Mia R., caregiver",
+              tone: "from-blue-500 to-indigo-600",
+            },
+            {
+              q: "Dispatch is finally calm. I can actually manage the fleet instead of chasing it.",
+              a: "— Ops team, AshlandTransit",
+              tone: "from-violet-500 to-fuchsia-600",
+            },
+            {
+              q: "I see the rider's name, the ETA, and the route. Driving has never been this clear.",
+              a: "— Marcus, Driver",
+              tone: "from-emerald-500 to-teal-600",
+            },
+          ].map((v, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ amount: 0.3, margin: "-80px" }}
+              transition={{ delay: i * 0.08 }}
+              className="glass-panel-strong rounded-2xl p-6 relative overflow-hidden"
+            >
+              <div
+                className={`absolute -top-16 -right-16 w-40 h-40 rounded-full blur-3xl opacity-20 bg-gradient-to-br ${v.tone}`}
+              />
+              <div className="relative">
+                <span className="text-4xl font-black text-slate-300 leading-none">“</span>
+                <p className="text-sm font-semibold text-slate-700 leading-relaxed">
+                  {v.q}
+                </p>
+                <p className="mt-3 text-[11px] font-black uppercase tracking-widest text-slate-400">
+                  {v.a}
+                </p>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
       {/* ═══ BOTTOM CTA ════════════════════════════════════════════ */}
       <section className="relative w-full max-w-6xl mx-auto px-5 sm:px-8 pb-6 z-10">
         <div className="divider-glow mb-8" />
@@ -687,7 +1025,7 @@ const LandingPage = ({ onLogin }) => {
         <motion.div
           initial={{ opacity: 0, y: 15 }}
           whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
+          viewport={{ amount: 0.2, margin: "-80px" }}
           transition={{ duration: 0.5 }}
           className="glass-panel rounded-2xl p-8 md:p-10 flex flex-col md:flex-row items-center justify-between gap-6"
         >
