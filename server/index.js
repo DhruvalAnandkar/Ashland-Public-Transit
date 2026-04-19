@@ -29,6 +29,7 @@ const limiter = rateLimit({
     const open = [
       '/api/rides/fleet/driver-ping',
       '/api/rides/estimate-fare',
+      '/api/rides/fare-info',
       '/api/rides/check-capacity',
       '/api/rides/track',
       '/api/rides/fleet/live',
@@ -59,6 +60,7 @@ app.use((err, req, res, next) => {
 
 const http = require('http');
 const SocketService = require('./services/SocketService');
+const AutoCancelService = require('./services/AutoCancelService');
 
 const PORT = process.env.PORT || 5000;
 
@@ -67,6 +69,9 @@ const server = http.createServer(app);
 
 // Initialize WebSockets
 SocketService.init(server);
+
+// Background sweep: auto-cancel expired rides and flag no-shows
+AutoCancelService.start();
 
 server.listen(PORT, () => {
     console.log(` Expert Server started on port ${PORT}`);

@@ -186,7 +186,86 @@ class SocketService {
                     message: message || 'EMERGENCY: Driver triggered SOS',
                     timestamp: Date.now()
                 });
-                console.warn(`🚨 SOS ALERT from driver: ${driverUsername}`);
+                console.warn(`SOS ALERT from driver: ${driverUsername}`);
+            });
+
+            // --- Dispatcher → Driver targeted message ---
+            socket.on('dispatcher_message_driver', (data) => {
+                const { driverUsername, message, from } = data || {};
+                if (!driverUsername || !message) return;
+                this.io.to(`room_driver_${driverUsername}`).emit('dispatcher_message', {
+                    from: from || 'Dispatch',
+                    message,
+                    timestamp: Date.now()
+                });
+            });
+
+            // --- Driver → Dispatcher message ---
+            socket.on('driver_message_dispatcher', (data) => {
+                const { driverUsername, message } = data || {};
+                if (!message) return;
+                this.io.to('room_dispatcher').emit('driver_message', {
+                    driverUsername: driverUsername || 'Unknown',
+                    message,
+                    timestamp: Date.now()
+                });
+            });
+
+            // --- Dispatcher → Rider targeted message (by riderId) ---
+            socket.on('dispatcher_message_rider', (data) => {
+                const { riderId, message, from } = data || {};
+                if (!riderId || !message) return;
+                this.io.to(`room_client_${riderId}`).emit('dispatcher_message', {
+                    from: from || 'Dispatch',
+                    message,
+                    timestamp: Date.now()
+                });
+            });
+
+            // --- Walkie-talkie: dispatcher → specific driver ---
+            socket.on('walkie_to_driver', (data) => {
+                const { driverUsername, message, severity = 'info', from } = data || {};
+                if (!driverUsername || !message) return;
+                this.io.to(`room_driver_${driverUsername}`).emit('walkie_dispatcher', {
+                    from: from || 'Dispatch',
+                    message,
+                    severity,
+                    timestamp: Date.now()
+                });
+            });
+
+            // --- Walkie-talkie: driver → dispatcher (text blast) ---
+            socket.on('walkie_to_dispatcher', (data) => {
+                const { driverUsername, message, severity = 'info' } = data || {};
+                if (!message) return;
+                this.io.to('room_dispatcher').emit('walkie_driver', {
+                    from: driverUsername || 'Unknown',
+                    message,
+                    severity,
+                    timestamp: Date.now()
+                });
+            });
+
+            // --- Dispatcher broadcast to all drivers ---
+            socket.on('dispatcher_broadcast', (data) => {
+                const { audience = 'drivers', message, severity = 'info', from } = data || {};
+                if (!message) return;
+                const payload = {
+                    from: from || 'Dispatch',
+                    message,
+                    severity,
+                    timestamp: Date.now()
+                };
+                // Emit to ALL sockets that joined any driver room by
+                // emitting a global event the driver clients listen on.
+                if (audience === 'drivers' || audience === 'all') {
+                    this.io.emit('broadcast_drivers', payload);
+                }
+                if (audience === 'riders' || audience === 'all') {
+                    this.io.emit('broadcast_riders', payload);
+                }
+                // Echo back to dispatchers so they see the sent message.
+                this.io.to('room_dispatcher').emit('broadcast_sent', payload);
             });
 
             socket.on('disconnect', () => {
@@ -199,23 +278,34 @@ class SocketService {
      * Broadcasts a ride update to all relevant parties.
      * @param {Object} ride - The updated ride document.
      */
-    emitRideUpdate(ride) {
+    async emitRideUpdate(ride) {
         if (!this.io) {
             console.error('SocketService: Cannot emit, io is not initialized.');
             return;
         }
 
-        // Always notify the dispatchers
+        // 1) Dispatchers
         this.io.to('room_dispatcher').emit('ride_updated', ride);
 
-        // Notify the specific assigned driver, if one exists
-        if (ride.assignedVehicle !== 'Unassigned') {
-            if (ride.assignedDriver) {
-                this.io.to(`room_driver_${ride.assignedDriver}`).emit('manifest_updated', ride);
+        // 2) Driver of the assigned vehicle — the Ride schema has no
+        //    `assignedDriver` field directly, so we resolve it via
+        //    Vehicle.assignedDriver (username).
+        try {
+            if (ride.assignedVehicle && ride.assignedVehicle !== 'Unassigned') {
+                const Vehicle = require('../models/Vehicle');
+                const veh = await Vehicle.findOne({ name: ride.assignedVehicle })
+                    .select('assignedDriver');
+                if (veh?.assignedDriver) {
+                    this.io
+                        .to(`room_driver_${veh.assignedDriver}`)
+                        .emit('manifest_updated', ride);
+                }
             }
+        } catch (err) {
+            console.error('manifest_updated resolve failed:', err);
         }
 
-        // Notify the client about their specific ride
+        // 3) Rider channel
         if (ride.riderId) {
             this.io.to(`room_client_${ride.riderId}`).emit('ride_status_changed', ride);
         }

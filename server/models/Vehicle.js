@@ -25,7 +25,7 @@ const VehicleSchema = new mongoose.Schema({
     }],
     status: {
         type: String,
-        enum: ['Active', 'In Shop'],
+        enum: ['Active', 'In Shop', 'Retired'],
         default: 'Active'
     },
     // --- IDENTIFICATION ---
@@ -63,6 +63,8 @@ const VehicleSchema = new mongoose.Schema({
         date: { type: Date, default: Date.now },
         cost: { type: Number, default: 0 },
         notes: String,
+        mileage: { type: Number, default: 0 },
+        performedBy: { type: String, default: '' },
         engineHoursAtService: Number
     }]
 }, { timestamps: true });

@@ -50,15 +50,21 @@ const RideSchema = new mongoose.Schema(
     // 3. Trip Logic
     userType: {
       type: String,
+      // Canonical APT rider types + legacy aliases for backwards
+      // compatibility with older client builds. The fare calculator
+      // normalizes anything passed in to one of the canonical four:
+      //   'General'  'Elderly/Disabled'  'ChildWithAdult'  'ChildAlone'
       enum: [
         "General",
+        "Elderly/Disabled",
+        "ChildWithAdult",
+        "ChildAlone",
         "Standard",
         "Senior",
         "Student",
         "Veteran",
-        "Elderly/Disabled",
         "Child",
-      ], // Expanded Enums - added "General" for mobile app compatibility
+      ],
       required: true,
     },
     isSameDay: { type: Boolean, default: false },

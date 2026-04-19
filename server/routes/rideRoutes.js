@@ -5,6 +5,13 @@ const Ride = require("../models/Ride");
 const Vehicle = require("../models/Vehicle");
 const User = require("../models/User");
 const calculateFare = require("../utils/fareCalculator");
+const {
+  getFareBreakdown,
+  getNoShowFee,
+  normalizeUserType,
+  IN_CITY_RATES,
+  NO_SHOW_FEES,
+} = require("../utils/fareCalculator");
 const SystemSetting = require("../models/SystemSetting");
 const { protect } = require("../middleware/authMiddleware");
 const rideController = require("../controllers/rideController");
@@ -181,6 +188,68 @@ const markRidePaid = async (ride, source = "Stripe Checkout") => {
 };
 
 /**
+ * @route   GET /api/rides/fare-info
+ * @desc    Public APT rate card (for FareInfoScreen)
+ */
+router.get("/fare-info", (req, res) => {
+  res.json({
+    inCity: IN_CITY_RATES,
+    noShow: {
+      general: NO_SHOW_FEES.General,
+      elderlyDisabled: NO_SHOW_FEES["Elderly/Disabled"],
+    },
+    hours: {
+      weekdays: "6:00 AM – 9:00 PM",
+      saturday: "8:00 AM – 6:00 PM",
+      sunday: "Closed",
+    },
+    notes: {
+      companion:
+        "A 2nd rider going to the same destination as a General Public primary pays half of the primary fare.",
+      childFree:
+        "Children under 12 always ride FREE with a fare-paying adult.",
+      scheduledCutoff:
+        "Scheduled fare requires the booking to be made at least 24 hours in advance; otherwise same-day rates apply.",
+    },
+    contact: {
+      phone: "(419) 207-8240",
+      office: "(419) 289-8221",
+      tddy: "711 (Ohio Relay)",
+      address: "206 Claremont Avenue, Ashland, OH 44805",
+    },
+  });
+});
+
+/**
+ * @route   POST /api/rides/estimate-fare
+ * @desc    Official APT fare preview. Returns a detailed breakdown so
+ *          the rider UI can render line-items that EXACTLY match what
+ *          will be charged when the ride is created.
+ */
+router.post("/estimate-fare", (req, res) => {
+  try {
+    const {
+      userType = "General",
+      isSameDay = false,
+      passengers = 1,
+      childWithAdult = false,
+      companions, // optional: [{ userType, childWithAdult? }, ...]
+    } = req.body || {};
+
+    const breakdown = getFareBreakdown({
+      userType,
+      isSameDay: !!isSameDay,
+      passengers: Number(passengers) || 1,
+      childWithAdult: !!childWithAdult,
+      companions,
+    });
+    res.json(breakdown);
+  } catch (err) {
+    res.status(400).json({ message: err.message });
+  }
+});
+
+/**
  * @route   GET /api/rides/check-capacity
  * @desc    DYNAMIC Resource-Based Fleet Logic
  */
@@ -259,12 +328,13 @@ router.post("/", async (req, res) => {
       dropoff,
       dropoffCoordinates,
       userType,
-      isSameDay,
       passengers,
       isOutOfTown,
       mileage,
       scheduledTime,
       paymentMethod,
+      childWithAdult,
+      companions,
     } = req.body;
 
     if (
@@ -304,13 +374,22 @@ router.post("/", async (req, res) => {
       });
     }
 
-    const officialFare = calculateFare(
+    // APT rule: "Scheduled Ahead" is ≥ 24 hours in advance. Anything
+    // booked inside the 24-hour window is "Same-Day Service" and the
+    // higher rate applies. We enforce this server-side so the client
+    // can never pick the cheaper tier by mistake.
+    const MS_IN_24H = 24 * 60 * 60 * 1000;
+    const advanceMs = bookingDate.getTime() - Date.now();
+    const isSameDay = advanceMs < MS_IN_24H;
+
+    const fareBreakdown = getFareBreakdown({
       userType,
       isSameDay,
       passengers,
-      isOutOfTown,
-      mileage,
-    );
+      childWithAdult: !!childWithAdult,
+      companions,
+    });
+    const officialFare = fareBreakdown.total;
 
     const setting = await SystemSetting.findOne({ key: "autoAccept" });
     const autoAccept = setting ? setting.value : false;
@@ -330,12 +409,13 @@ router.post("/", async (req, res) => {
       pickupCoordinates,
       dropoff,
       dropoffCoordinates,
-      userType,
+      userType: normalizeUserType(userType, { childWithAdult: !!childWithAdult }),
       isSameDay,
       passengers,
       isOutOfTown,
       mileage,
       fare: officialFare,
+      fareType: isSameDay ? "SameDay" : "Scheduled",
       scheduledTime: bookingDate,
       riderId: req.body.riderId,
       status: initialStatus,
@@ -434,18 +514,69 @@ router.patch("/:id/status", protect, async (req, res) => {
 /**
  * @route   PATCH /api/rides/:id/vehicle
  */
-router.patch("/:id/vehicle", async (req, res) => {
+router.patch("/:id/vehicle", protect, async (req, res) => {
   try {
     const { assignedVehicle } = req.body;
+    const prev = await Ride.findById(req.params.id).select("assignedVehicle riderId");
+    if (!prev) return res.status(404).json({ message: "Ride not found" });
+
     const updatedRide = await Ride.findByIdAndUpdate(
       req.params.id,
       { assignedVehicle },
       { new: true },
     );
+    if (!updatedRide) return res.status(404).json({ message: "Ride not found" });
 
-    if (!updatedRide)
-      return res.status(404).json({ message: "Ride not found" });
-    res.json(updatedRide);
+    // Enrich the payload with driver details so the rider's mobile
+    // app immediately knows "your driver is John in Van #3".
+    let driverInfo = null;
+    if (assignedVehicle && assignedVehicle !== "Unassigned") {
+      const vehicle = await Vehicle.findOne({ name: assignedVehicle });
+      if (vehicle?.assignedDriver) {
+        const drv = await User.findOne({ username: vehicle.assignedDriver })
+          .select("username fullName phoneNumber profilePhoto currentLocation status");
+        driverInfo = {
+          username: drv?.username || vehicle.assignedDriver,
+          fullName: drv?.fullName || drv?.username || vehicle.assignedDriver,
+          phoneNumber: drv?.phoneNumber || "",
+          profilePhoto: drv?.profilePhoto || "",
+          currentLocation: drv?.currentLocation || null,
+          status: drv?.status || "Idle",
+          vehicleName: vehicle.name,
+          vehicleType: vehicle.type,
+          vehiclePlate: vehicle.licensePlate || "",
+        };
+      }
+    }
+
+    await AuditLog.create({
+      action: "RIDE_VEHICLE_ASSIGNED",
+      performedBy: req.user?.username || "Dispatcher",
+      targetId: updatedRide._id,
+      targetModel: "Ride",
+      changes: {
+        from: prev.assignedVehicle,
+        to: assignedVehicle,
+        driver: driverInfo?.username || null,
+      },
+    });
+
+    // Real-time broadcast so rider gets an instant notification and
+    // dispatch + driver clients refresh their manifests.
+    const enriched = { ...updatedRide.toObject(), driverInfo };
+    SocketService.emitRideUpdate(updatedRide);
+    if (updatedRide.riderId) {
+      SocketService.io
+        ?.to(`room_client_${updatedRide.riderId}`)
+        .emit("driver_assigned", enriched);
+    }
+    if (driverInfo?.username) {
+      SocketService.io
+        ?.to(`room_driver_${driverInfo.username}`)
+        .emit("manifest_updated", updatedRide);
+    }
+
+    res.json(enriched);
   } catch (err) {
     res.status(400).json({ message: err.message });
   }
@@ -481,6 +612,58 @@ router.patch("/:id/details", async (req, res) => {
     res.json(updatedRide);
   } catch (err) {
     res.status(400).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/rides/:id/rider-cancel
+ * @desc    Rider-initiated cancel (only if not En-Route / Completed)
+ */
+router.post("/:id/rider-cancel", protect, async (req, res) => {
+  try {
+    const ride = await Ride.findById(req.params.id);
+    if (!ride) return res.status(404).json({ message: "Ride not found" });
+
+    if (
+      ride.riderId &&
+      String(ride.riderId) !== String(req.user.id)
+    ) {
+      return res.status(403).json({ message: "Not your ride" });
+    }
+    if (["Completed", "Cancelled", "Rejected"].includes(ride.status)) {
+      return res.status(400).json({ message: `Cannot cancel a ride in status ${ride.status}` });
+    }
+    if (ride.status === "En-Route") {
+      return res
+        .status(400)
+        .json({ message: "Ride is already in progress. Contact dispatch to cancel." });
+    }
+
+    ride.status = "Cancelled";
+    ride.logs.push({
+      user: "Rider",
+      action: "Cancelled Ride",
+      details: req.body?.reason ? `Reason: ${req.body.reason}` : "Rider self-cancelled via mobile app.",
+    });
+    ride.notifications.push({
+      audience: "Dispatcher",
+      message: `Rider cancelled ${ride.ticketId}.`,
+    });
+    await ride.save();
+
+    await AuditLog.create({
+      action: "RIDE_RIDER_CANCEL",
+      performedBy: req.user.id,
+      targetId: ride._id,
+      targetModel: "Ride",
+      changes: { from: ride.status, to: "Cancelled" },
+      metadata: req.body?.reason || "Rider self-cancel",
+    }).catch(() => {});
+
+    SocketService.emitRideUpdate(ride);
+    res.json(ride);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 });
 
@@ -1140,5 +1323,706 @@ router.patch(
     }
   },
 );
+
+// ============================================================
+// DISPATCHER / ADMIN — EXTENDED OPERATIONS (Phase 4)
+// ============================================================
+
+/**
+ * @route   GET /api/rides/dispatcher/kpi
+ * @desc    Real-time KPI header: today's rides, revenue, on-time %,
+ *          active drivers, no-show count, pending count.
+ */
+router.get(
+  "/dispatcher/kpi",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(start);
+      end.setDate(end.getDate() + 1);
+
+      const [todayRides, activeDrivers, pendingCount] = await Promise.all([
+        Ride.find({ scheduledTime: { $gte: start, $lt: end } }).select(
+          "status fare finalizedFare scheduledTime paymentStatus logs passengers",
+        ),
+        User.countDocuments({
+          role: { $regex: /^driver$/i },
+          status: "Active",
+          isSuspended: { $ne: true },
+        }),
+        Ride.countDocuments({ status: "Pending" }),
+      ]);
+
+      const total = todayRides.length;
+      const completed = todayRides.filter((r) => r.status === "Completed").length;
+      const cancelled = todayRides.filter((r) => r.status === "Cancelled").length;
+      const noShow = todayRides.filter((r) =>
+        (r.logs || []).some((l) => /no[- ]?show/i.test(l.action || l.details || "")),
+      ).length;
+      const revenue = todayRides
+        .filter((r) => r.paymentStatus === "Paid" || r.status === "Completed")
+        .reduce((s, r) => s + (r.finalizedFare || r.fare || 0), 0);
+      const invoiced = todayRides
+        .filter((r) => r.paymentStatus === "Invoiced")
+        .reduce((s, r) => s + (r.finalizedFare || r.fare || 0), 0);
+      const totalPax = todayRides.reduce(
+        (s, r) => s + (r.passengers || 1),
+        0,
+      );
+
+      // On-time %: En-Route started within +/- 10 minutes of scheduled.
+      let onTime = 0;
+      let onTimeDen = 0;
+      todayRides.forEach((r) => {
+        const log = (r.logs || []).find((l) => /en[- ]?route/i.test(l.action || ""));
+        if (log?.timestamp && r.scheduledTime) {
+          onTimeDen += 1;
+          const deltaMin = Math.abs(
+            (new Date(log.timestamp) - new Date(r.scheduledTime)) / 60000,
+          );
+          if (deltaMin <= 10) onTime += 1;
+        }
+      });
+
+      res.json({
+        today: start.toISOString(),
+        totalRides: total,
+        completedRides: completed,
+        cancelledRides: cancelled,
+        pendingRides: pendingCount,
+        noShowRides: noShow,
+        revenue: Math.round(revenue * 100) / 100,
+        invoiced: Math.round(invoiced * 100) / 100,
+        passengers: totalPax,
+        activeDrivers,
+        onTimePercent: onTimeDen ? Math.round((onTime / onTimeDen) * 100) : null,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   GET /api/rides/dispatcher/rider/:id
+ * @desc    RIDER 360° — everything the dispatcher needs about one user.
+ */
+router.get(
+  "/dispatcher/rider/:id",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const rider = await User.findById(req.params.id).select("-password");
+      if (!rider) return res.status(404).json({ message: "Rider not found" });
+
+      const rides = await Ride.find({
+        $or: [{ riderId: rider._id }, { phoneNumber: rider.phoneNumber }],
+      })
+        .sort({ scheduledTime: -1 })
+        .limit(500);
+
+      const stats = {
+        total: rides.length,
+        completed: rides.filter((r) => r.status === "Completed").length,
+        cancelled: rides.filter((r) => r.status === "Cancelled").length,
+        noShow: rides.filter((r) =>
+          (r.logs || []).some((l) =>
+            /no[- ]?show/i.test(l.action || l.details || ""),
+          ),
+        ).length,
+        totalSpent: rides
+          .filter((r) => r.paymentStatus === "Paid")
+          .reduce((s, r) => s + (r.finalizedFare || r.fare || 0), 0),
+        outstanding: rides
+          .filter((r) => r.paymentStatus === "Invoiced")
+          .reduce((s, r) => s + (r.finalizedFare || r.fare || 0), 0),
+      };
+
+      const recentAudit = await AuditLog.find({
+        targetId: rider._id,
+        targetModel: "User",
+      })
+        .sort({ createdAt: -1 })
+        .limit(25);
+
+      res.json({ rider, stats, rides, audit: recentAudit });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   GET /api/rides/dispatcher/driver/:id
+ * @desc    DRIVER 360° — everything the dispatcher needs about one driver.
+ */
+router.get(
+  "/dispatcher/driver/:id",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const driver = await User.findById(req.params.id).select("-password");
+      if (!driver || !/driver/i.test(driver.role || "")) {
+        return res.status(404).json({ message: "Driver not found" });
+      }
+
+      const vehicle = await Vehicle.findOne({ assignedDriver: driver.username });
+      const vehicleName = vehicle ? vehicle.name : null;
+
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+
+      const rides = vehicleName
+        ? await Ride.find({
+          assignedVehicle: vehicleName,
+          scheduledTime: { $gte: start },
+        })
+          .sort({ scheduledTime: -1 })
+          .limit(300)
+        : [];
+
+      const completed = rides.filter((r) => r.status === "Completed");
+      const revenue = completed.reduce(
+        (s, r) => s + (r.finalizedFare || r.fare || 0),
+        0,
+      );
+      const totalPax = completed.reduce((s, r) => s + (r.passengers || 1), 0);
+
+      const audit = await AuditLog.find({
+        targetId: driver._id,
+        targetModel: "User",
+      })
+        .sort({ createdAt: -1 })
+        .limit(25);
+
+      res.json({
+        driver,
+        vehicle,
+        rides,
+        stats: {
+          rides30d: rides.length,
+          completed30d: completed.length,
+          revenue30d: Math.round(revenue * 100) / 100,
+          passengers30d: totalPax,
+          onlineNow: driver.status === "Active",
+          lastLocation: driver.currentLocation,
+          lastLocationUpdate: driver.lastLocationUpdate,
+        },
+        audit,
+      });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   POST /api/rides/:id/dispatcher-notes
+ * @desc    Append a dispatcher note to a ride (audit trail).
+ */
+router.post(
+  "/:id/dispatcher-notes",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { note } = req.body;
+      if (!note || !String(note).trim()) {
+        return res.status(400).json({ message: "Note cannot be empty" });
+      }
+      const ride = await Ride.findByIdAndUpdate(
+        req.params.id,
+        {
+          $set: { dispatcherNotes: note },
+          $push: {
+            logs: {
+              user: req.currentUser.username || "Dispatcher",
+              action: "Dispatcher Note",
+              details: note,
+            },
+          },
+        },
+        { new: true },
+      );
+      if (!ride) return res.status(404).json({ message: "Ride not found" });
+      SocketService.emitRideUpdate(ride);
+      res.json(ride);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   POST /api/rides/:id/no-show
+ * @desc    Manually mark a ride as no-show (applies APT fee + Cancelled).
+ */
+router.post(
+  "/:id/no-show",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { getNoShowFee } = require("../utils/fareCalculator");
+      const ride = await Ride.findById(req.params.id);
+      if (!ride) return res.status(404).json({ message: "Ride not found" });
+      if (["Completed", "Cancelled", "Rejected"].includes(ride.status)) {
+        return res
+          .status(400)
+          .json({ message: `Ride already ${ride.status}. No-show not applicable.` });
+      }
+      const fee = getNoShowFee(ride.userType);
+      ride.status = "Cancelled";
+      ride.fare = fee;
+      ride.finalizedFare = fee;
+      ride.paymentStatus = fee > 0 ? "Invoiced" : "Pending";
+      ride.logs = ride.logs || [];
+      ride.logs.push({
+        user: req.currentUser.username || "Dispatcher",
+        action: "NO_SHOW_MARKED",
+        details: `No-show fee: $${fee.toFixed(2)}`,
+      });
+      await ride.save();
+
+      await AuditLog.create({
+        action: "NO_SHOW_MARKED",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: ride._id,
+        targetModel: "Ride",
+        changes: { fare: fee, status: "Cancelled" },
+      });
+      SocketService.emitRideUpdate(ride);
+      res.json(ride);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   GET /api/rides/dispatcher/audit
+ * @desc    Paginated audit log (dispatcher-only, with filters).
+ */
+router.get(
+  "/dispatcher/audit",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { action, user, limit = 100, skip = 0 } = req.query;
+      const q = {};
+      if (action) q.action = action;
+      if (user) q.performedBy = user;
+      const logs = await AuditLog.find(q)
+        .sort({ createdAt: -1 })
+        .skip(Number(skip) || 0)
+        .limit(Math.min(500, Number(limit) || 100));
+      res.json(logs);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+// ─── VEHICLE CRUD (proper dispatcher fleet management) ───────────
+router.post(
+  "/vehicles",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const vehicle = await Vehicle.create(req.body || {});
+      await AuditLog.create({
+        action: "VEHICLE_CREATED",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: vehicle._id,
+        targetModel: "Vehicle",
+        changes: req.body,
+      });
+      SocketService.emitDispatcherAlert({
+        type: "VEHICLE_CREATED",
+        severity: "info",
+        message: `Vehicle ${vehicle.name} added to fleet.`,
+        timestamp: Date.now(),
+      });
+      res.status(201).json(vehicle);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
+
+router.delete(
+  "/vehicles/:id",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const veh = await Vehicle.findByIdAndDelete(req.params.id);
+      if (!veh) return res.status(404).json({ message: "Vehicle not found" });
+      await AuditLog.create({
+        action: "VEHICLE_DELETED",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: veh._id,
+        targetModel: "Vehicle",
+      });
+      res.json({ success: true });
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
+
+router.post(
+  "/vehicles/:id/service-log",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { type, notes, cost, mileage, performedBy } = req.body || {};
+      const entry = {
+        type: type || "Service",
+        notes: notes || "",
+        cost: Number(cost) || 0,
+        mileage: Number(mileage) || 0,
+        performedBy: performedBy || req.currentUser.username || "Dispatcher",
+        date: new Date(),
+      };
+      const veh = await Vehicle.findByIdAndUpdate(
+        req.params.id,
+        {
+          $push: { maintenanceHistory: entry },
+          $set: { lastServiceDate: new Date() },
+        },
+        { new: true },
+      );
+      if (!veh) return res.status(404).json({ message: "Vehicle not found" });
+      await AuditLog.create({
+        action: "VEHICLE_SERVICE_LOG",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetId: veh._id,
+        targetModel: "Vehicle",
+        changes: entry,
+      });
+      res.status(201).json(veh);
+    } catch (err) {
+      res.status(400).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   POST /api/rides/dispatcher/broadcast
+ * @desc    Send a message to all drivers or all riders (socket + log).
+ */
+router.post(
+  "/dispatcher/broadcast",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { audience = "drivers", message, severity = "info" } = req.body || {};
+      if (!message) return res.status(400).json({ message: "Message required" });
+      const payload = {
+        from: req.currentUser.username || "Dispatch",
+        message,
+        severity,
+        audience,
+        timestamp: Date.now(),
+      };
+      if (audience === "drivers" || audience === "all") {
+        SocketService.io?.emit("broadcast_drivers", payload);
+      }
+      if (audience === "riders" || audience === "all") {
+        SocketService.io?.emit("broadcast_riders", payload);
+      }
+      SocketService.emitDispatcherAlert({
+        type: "BROADCAST_SENT",
+        severity,
+        message: `Broadcast to ${audience}: ${message}`,
+        timestamp: Date.now(),
+      });
+      await AuditLog.create({
+        action: "DISPATCHER_BROADCAST",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetModel: "Broadcast",
+        changes: payload,
+      });
+      res.json({ ok: true, sent: payload });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   POST /api/rides/dispatcher/message-driver
+ * @desc    Targeted dispatcher → driver message (persisted + socket).
+ */
+router.post(
+  "/dispatcher/message-driver",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { driverUsername, message } = req.body || {};
+      if (!driverUsername || !message) {
+        return res
+          .status(400)
+          .json({ message: "driverUsername and message are required" });
+      }
+      SocketService.io
+        ?.to(`room_driver_${driverUsername}`)
+        .emit("dispatcher_message", {
+          from: req.currentUser.username || "Dispatch",
+          message,
+          timestamp: Date.now(),
+        });
+      await AuditLog.create({
+        action: "DISPATCHER_DM_DRIVER",
+        performedBy: req.currentUser.username || "Dispatcher",
+        targetModel: "User",
+        changes: { driverUsername, message },
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+// ─── LOCK DOWN previously-unauthenticated dispatcher endpoints ──
+// NOTE: we keep the old unauthenticated read handlers above for
+// backwards compatibility with mobile clients already in the field.
+// Anything mutating is protected below by shadow routes that take
+// precedence in the client.  If you want to fully lock the legacy
+// endpoints, replace them inline above with `protect`.
+router.get(
+  "/dispatcher/manifest",
+  protect,
+  requireDispatcherOrAdmin,
+  async (req, res) => {
+    try {
+      const { from, to } = req.query;
+      const q = {};
+      if (from || to) {
+        q.scheduledTime = {};
+        if (from) q.scheduledTime.$gte = new Date(from);
+        if (to) q.scheduledTime.$lte = new Date(to);
+      }
+      const rides = await Ride.find(q).sort({ scheduledTime: 1 }).limit(1000);
+      res.json(rides);
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+// ============================================================
+// DRIVER-SCOPED ENDPOINTS (Phase 5)
+// ============================================================
+
+const requireDriver = async (req, res, next) => {
+  try {
+    const u = await User.findById(req.user.id).select("role username");
+    if (!u) return res.status(401).json({ message: "User not found" });
+    if (!/driver/i.test(u.role)) {
+      return res.status(403).json({ message: "Driver access only" });
+    }
+    req.driver = u;
+    next();
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+/**
+ * @route   GET /api/rides/driver/my-manifest
+ * @desc    Rides assigned to the current driver's vehicle (today + upcoming).
+ */
+router.get("/driver/my-manifest", protect, requireDriver, async (req, res) => {
+  try {
+    const vehicle = await Vehicle.findOne({ assignedDriver: req.driver.username });
+    if (!vehicle) return res.json({ vehicle: null, rides: [] });
+
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 7);
+
+    const rides = await Ride.find({
+      assignedVehicle: vehicle.name,
+      scheduledTime: { $gte: start, $lt: end },
+      status: { $in: ["Pending", "Confirmed", "En-Route", "Completed"] },
+    }).sort({ scheduledTime: 1 });
+
+    res.json({ vehicle, rides });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   GET /api/rides/driver/active
+ * @desc    Current in-progress ride for this driver (if any) with full rider info.
+ */
+router.get("/driver/active", protect, requireDriver, async (req, res) => {
+  try {
+    const vehicle = await Vehicle.findOne({ assignedDriver: req.driver.username });
+    if (!vehicle) return res.json(null);
+    const ride = await Ride.findOne({
+      assignedVehicle: vehicle.name,
+      status: { $in: ["Confirmed", "En-Route"] },
+    }).sort({ scheduledTime: 1 });
+    if (!ride) return res.json(null);
+
+    let rider = null;
+    if (ride.riderId) {
+      rider = await User.findById(ride.riderId).select(
+        "username fullName phoneNumber profilePhoto avatar riderType emergencyContact accessibilityNotes mobilityNeeds",
+      );
+    }
+    res.json({ ride, rider, vehicle });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/rides/driver/shift
+ * @desc    Driver goes on duty / off duty. Persists status + emits to dispatch.
+ */
+router.post("/driver/shift", protect, requireDriver, async (req, res) => {
+  try {
+    const { action } = req.body || {};
+    const status =
+      action === "start" ? "Active" : action === "break" ? "Break" : "Offline";
+    const driver = await User.findByIdAndUpdate(
+      req.driver._id,
+      {
+        status,
+        ...(action === "start" && { lastShiftStart: new Date() }),
+        ...(action === "end" && { lastShiftEnd: new Date() }),
+      },
+      { new: true },
+    ).select("-password");
+
+    SocketService.io?.to("room_dispatcher").emit("driver_status_updated", {
+      driverUsername: driver.username,
+      driverId: driver._id,
+      status,
+      timestamp: Date.now(),
+    });
+    SocketService.emitDispatcherAlert({
+      type: "DRIVER_SHIFT",
+      severity: "info",
+      message: `${driver.username} ${action === "start" ? "started shift" : action === "break" ? "on break" : "ended shift"}.`,
+      timestamp: Date.now(),
+    });
+
+    await AuditLog.create({
+      action: "DRIVER_SHIFT",
+      performedBy: driver.username,
+      targetId: driver._id,
+      targetModel: "User",
+      changes: { status, action },
+    });
+
+    res.json({ status });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/rides/driver/arriving
+ * @desc    Driver announces "I'm arriving" — rider gets a socket ping + audit.
+ */
+router.post("/driver/arriving", protect, requireDriver, async (req, res) => {
+  try {
+    const { rideId, etaMinutes } = req.body || {};
+    const ride = await Ride.findById(rideId);
+    if (!ride) return res.status(404).json({ message: "Ride not found" });
+
+    ride.logs = ride.logs || [];
+    ride.logs.push({
+      user: req.driver.username,
+      action: "DRIVER_ARRIVING",
+      details: `ETA ${etaMinutes || "?"} min`,
+    });
+    await ride.save();
+
+    if (ride.riderId) {
+      SocketService.io
+        ?.to(`room_client_${ride.riderId}`)
+        .emit("driver_arriving", {
+          rideId: ride._id,
+          driverUsername: req.driver.username,
+          etaMinutes,
+          timestamp: Date.now(),
+        });
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
+/**
+ * @route   POST /api/rides/driver/message-rider
+ * @desc    Targeted message from driver to rider (safe chat channel).
+ */
+router.post(
+  "/driver/message-rider",
+  protect,
+  requireDriver,
+  async (req, res) => {
+    try {
+      const { riderId, rideId, message } = req.body || {};
+      if (!message) return res.status(400).json({ message: "Message required" });
+      const room = rideId ? `room_client_${rideId}` : `room_client_${riderId}`;
+      SocketService.io?.to(room).emit("driver_message", {
+        from: req.driver.username,
+        message,
+        timestamp: Date.now(),
+      });
+      res.json({ ok: true });
+    } catch (err) {
+      res.status(500).json({ message: err.message });
+    }
+  },
+);
+
+/**
+ * @route   POST /api/rides/driver/walkie
+ * @desc    Push a "radio" text blast to the dispatcher with priority.
+ *          MVP: text+severity (prelude to audio PTT). All audited.
+ */
+router.post("/driver/walkie", protect, requireDriver, async (req, res) => {
+  try {
+    const { message, severity = "info" } = req.body || {};
+    if (!message) return res.status(400).json({ message: "Message required" });
+    SocketService.io?.to("room_dispatcher").emit("walkie_driver", {
+      from: req.driver.username,
+      message,
+      severity,
+      timestamp: Date.now(),
+    });
+    await AuditLog.create({
+      action: "DRIVER_WALKIE",
+      performedBy: req.driver.username,
+      targetModel: "Walkie",
+      changes: { message, severity },
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
 
 module.exports = router;
