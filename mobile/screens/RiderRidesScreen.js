@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity,
-    FlatList, Modal, RefreshControl, StatusBar,
+    FlatList, Modal, RefreshControl, StatusBar, Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -12,7 +12,7 @@ import Animated, {
     useSharedValue, useAnimatedStyle, withRepeat,
     withTiming, withSequence, withSpring, Easing,
 } from 'react-native-reanimated';
-import { getRideHistory } from '../services/api';
+import { getRideHistory, riderCancelRide } from '../services/api';
 
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
@@ -290,8 +290,44 @@ const RiderRidesScreen = ({ navigation }) => {
                                             </React.Fragment>
                                         ))}
 
+                                        {['Pending', 'Confirmed'].includes(selectedRide.status) && (
+                                            <TouchableOpacity
+                                                style={[styles.closeSheetBtn, { marginTop: 14 }]}
+                                                onPress={() => {
+                                                    Alert.alert(
+                                                        'Cancel Ride',
+                                                        'Are you sure you want to cancel this ride? Cancellations before dispatch are free. If your driver is already dispatched, APT no-show rules may apply.',
+                                                        [
+                                                            { text: 'Keep ride', style: 'cancel' },
+                                                            {
+                                                                text: 'Cancel ride',
+                                                                style: 'destructive',
+                                                                onPress: async () => {
+                                                                    try {
+                                                                        const updated = await riderCancelRide(selectedRide._id);
+                                                                        setRides((prev) => prev.map((r) => r._id === updated._id ? updated : r));
+                                                                        setSelectedRide(updated);
+                                                                        Alert.alert('Cancelled', 'Your ride has been cancelled.');
+                                                                    } catch (err) {
+                                                                        Alert.alert('Error', err?.response?.data?.message || err.message);
+                                                                    }
+                                                                }
+                                                            }
+                                                        ]
+                                                    );
+                                                }}
+                                            >
+                                                <LinearGradient
+                                                    colors={['#dc2626', '#991b1b']}
+                                                    style={styles.closeSheetGradient}
+                                                >
+                                                    <Text style={styles.closeSheetText}>Cancel Ride</Text>
+                                                </LinearGradient>
+                                            </TouchableOpacity>
+                                        )}
+
                                         <TouchableOpacity
-                                            style={styles.closeSheetBtn}
+                                            style={[styles.closeSheetBtn, { marginTop: 10 }]}
                                             onPress={() => setSelectedRide(null)}
                                         >
                                             <LinearGradient

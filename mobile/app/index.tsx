@@ -9,17 +9,57 @@ import RiderHomeScreen from '../screens/RiderHomeScreen';
 import RiderBookingScreen from '../screens/RiderBookingScreen';
 import RiderTrackingScreen from '../screens/RiderTrackingScreen';
 import RiderRidesScreen from '../screens/RiderRidesScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import EditProfileScreen from '../screens/EditProfileScreen';
+import SettingsScreen from '../screens/SettingsScreen';
+import ChangePasswordScreen from '../screens/ChangePasswordScreen';
+import SavedPlacesScreen from '../screens/SavedPlacesScreen';
+import PaymentMethodsScreen from '../screens/PaymentMethodsScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
+import HelpScreen from '../screens/HelpScreen';
+import AboutScreen from '../screens/AboutScreen';
+import FareInfoScreen from '../screens/FareInfoScreen';
 
 WebBrowser.maybeCompleteAuthSession();
 
+type ScreenKey =
+    | 'HOME'
+    | 'BOOKING'
+    | 'TICKET'
+    | 'RIDES'
+    | 'PROFILE'
+    | 'EDIT_PROFILE'
+    | 'SETTINGS'
+    | 'CHANGE_PASSWORD'
+    | 'SAVED_PLACES'
+    | 'PAYMENT_METHODS'
+    | 'NOTIFICATIONS'
+    | 'HELP'
+    | 'ABOUT'
+    | 'FARE_INFO';
+
 export default function Index() {
-    const [user, setUser] = useState(null);
-    const [currentScreen, setCurrentScreen] = useState('HOME');
-    const [currentRide, setCurrentRide] = useState(null);
-    const [currentParams, setCurrentParams] = useState(null);
+    const [user, setUser] = useState<any>(null);
+    const [stack, setStack] = useState<ScreenKey[]>(['HOME']);
+    const [currentRide, setCurrentRide] = useState<any>(null);
+    const [currentParams, setCurrentParams] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const router = useRouter();
     const stripeUrlHandledRef = useRef<string | null>(null);
+
+    const currentScreen = stack[stack.length - 1] || 'HOME';
+
+    const push = (screen: ScreenKey, params?: any) => {
+        setCurrentParams(params || null);
+        setStack((s) => [...s, screen]);
+    };
+    const pop = () => {
+        setStack((s) => (s.length > 1 ? s.slice(0, -1) : s));
+    };
+    const resetTo = (screen: ScreenKey, params?: any) => {
+        setCurrentParams(params || null);
+        setStack([screen]);
+    };
 
     useEffect(() => {
         if (!user || isLoading) return;
@@ -34,25 +74,21 @@ export default function Index() {
                 }
                 if (ride) {
                     setCurrentRide(ride);
-                    setCurrentScreen('TICKET');
+                    resetTo('TICKET');
                 }
             } catch {
                 try {
                     const res = await api.get(`/rides/track/${encodeURIComponent(ticketId)}`);
                     if (res.data) {
                         setCurrentRide(res.data);
-                        setCurrentScreen('TICKET');
+                        resetTo('TICKET');
                     }
                 } catch {
                     // ignore
                 }
             }
             setTimeout(() => {
-                try {
-                    router.replace('/');
-                } catch {
-                    // ignore
-                }
+                try { router.replace('/'); } catch { /* ignore */ }
             }, 150);
         };
 
@@ -61,11 +97,7 @@ export default function Index() {
             if (stripeUrlHandledRef.current === incomingUrl) return;
 
             let parsed: Linking.ParsedURL;
-            try {
-                parsed = Linking.parse(incomingUrl);
-            } catch {
-                return;
-            }
+            try { parsed = Linking.parse(incomingUrl); } catch { return; }
 
             const qs = parsed.queryParams || {};
             const rawSt = qs.status;
@@ -79,11 +111,7 @@ export default function Index() {
 
             if (status === 'cancel') {
                 stripeUrlHandledRef.current = incomingUrl;
-                try {
-                    router.replace('/');
-                } catch {
-                    // ignore
-                }
+                try { router.replace('/'); } catch { /* ignore */ }
                 return;
             }
 
@@ -101,69 +129,70 @@ export default function Index() {
             handleIncomingUrl(url);
         });
 
-        return () => {
-            sub.remove();
-        };
+        return () => sub.remove();
     }, [user, isLoading, router]);
 
-    // Session Restoration
     React.useEffect(() => {
         const restoreSession = async () => {
             const savedUser = await checkSession();
             if (savedUser) {
                 setUser(savedUser);
-                setCurrentScreen('HOME');
+                resetTo('HOME');
             }
             setIsLoading(false);
         };
         restoreSession();
     }, []);
 
-    // Navigation Helper
     const handleLogin = (userData: any) => {
         setUser(userData);
-        setCurrentScreen('HOME');
+        resetTo('HOME');
     };
 
     const handleLogout = async () => {
         await logout();
         setUser(null);
-        setCurrentScreen('HOME');
+        resetTo('HOME');
         setCurrentRide(null);
         setCurrentParams(null);
     };
 
-    // Register global 401 handler
+    const refreshUser = (patched: any) => {
+        setUser((prev: any) => ({ ...(prev || {}), ...(patched || {}) }));
+    };
+
     React.useEffect(() => {
         const { setUnauthorizedCallback } = require('../services/api');
         setUnauthorizedCallback(handleLogout);
     }, []);
 
-    // Mock Navigation Object
     const navigation = {
         navigate: (screenName: string, params?: any) => {
-            setCurrentParams(params || null);
-            if (screenName === 'RiderBookingScreen') setCurrentScreen('BOOKING');
-            else if (screenName === 'RiderRidesScreen') setCurrentScreen('RIDES');
+            if (screenName === 'RiderBookingScreen') push('BOOKING', params);
+            else if (screenName === 'RiderRidesScreen') push('RIDES', params);
             else if (screenName === 'RiderTrackingScreen') {
                 if (params?.ride) setCurrentRide(params.ride);
-                setCurrentScreen('TICKET');
+                push('TICKET', params);
             }
+            else if (screenName === 'ProfileScreen') push('PROFILE', params);
+            else if (screenName === 'SettingsScreen') push('SETTINGS', params);
         },
         replace: (screenName: string, params?: any) => {
-            setCurrentParams(params || null);
-            if (screenName === 'RiderBookingScreen') setCurrentScreen('BOOKING');
-            else if (screenName === 'RiderRidesScreen') setCurrentScreen('RIDES');
+            if (screenName === 'RiderBookingScreen') resetTo('BOOKING', params);
+            else if (screenName === 'RiderRidesScreen') resetTo('RIDES', params);
             else if (screenName === 'RiderTrackingScreen') {
                 if (params?.ride) setCurrentRide(params.ride);
-                setCurrentScreen('TICKET');
+                resetTo('TICKET', params);
             }
         },
-        goBack: () => setCurrentScreen('HOME'),
-        popToTop: () => setCurrentScreen('HOME')
+        goBack: () => pop(),
+        popToTop: () => resetTo('HOME'),
     };
 
     const route = { params: currentParams };
+
+    // Opens any sub-screen from the rider menu
+    const openSubScreen = (key: ScreenKey) => push(key);
 
     const renderScreen = () => {
         if (isLoading) {
@@ -184,19 +213,12 @@ export default function Index() {
                         user={user}
                         onLogout={handleLogout}
                         navigation={navigation}
-                        onViewTicket={(ride: any) => {
-                            setCurrentRide(ride);
-                            setCurrentScreen('TICKET');
-                        }}
+                        onViewTicket={(ride: any) => { setCurrentRide(ride); push('TICKET'); }}
+                        openMenu={(key: ScreenKey) => openSubScreen(key)}
                     />
                 );
             case 'BOOKING':
-                return (
-                    <RiderBookingScreen
-                        navigation={navigation}
-                        route={route}
-                    />
-                );
+                return <RiderBookingScreen navigation={navigation} route={route} />;
             case 'TICKET':
                 return (
                     <RiderTrackingScreen
@@ -205,17 +227,51 @@ export default function Index() {
                     />
                 );
             case 'RIDES':
+                return <RiderRidesScreen navigation={navigation} />;
+
+            case 'PROFILE':
                 return (
-                    <RiderRidesScreen
-                        navigation={navigation}
+                    <ProfileScreen
+                        user={user}
+                        refreshUser={refreshUser}
+                        onClose={pop}
+                        onLogout={handleLogout}
+                        navigate={openSubScreen}
                     />
                 );
+            case 'EDIT_PROFILE':
+                return <EditProfileScreen onClose={pop} refreshUser={refreshUser} />;
+            case 'SETTINGS':
+                return (
+                    <SettingsScreen
+                        onClose={pop}
+                        navigate={openSubScreen}
+                        onLogout={handleLogout}
+                        refreshUser={refreshUser}
+                    />
+                );
+            case 'CHANGE_PASSWORD':
+                return <ChangePasswordScreen onClose={pop} />;
+            case 'SAVED_PLACES':
+                return <SavedPlacesScreen onClose={pop} />;
+            case 'PAYMENT_METHODS':
+                return <PaymentMethodsScreen onClose={pop} user={user} />;
+            case 'NOTIFICATIONS':
+                return <NotificationsScreen onClose={pop} />;
+            case 'HELP':
+                return <HelpScreen onClose={pop} />;
+            case 'ABOUT':
+                return <AboutScreen onClose={pop} />;
+            case 'FARE_INFO':
+                return <FareInfoScreen onClose={pop} />;
+
             default:
                 return (
                     <RiderHomeScreen
                         user={user}
                         onLogout={handleLogout}
                         navigation={navigation}
+                        openMenu={(key: ScreenKey) => openSubScreen(key)}
                     />
                 );
         }

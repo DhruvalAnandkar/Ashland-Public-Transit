@@ -55,13 +55,13 @@ const STEPS = [
   { label: "Confirm", icon: "shield-checkmark-outline" },
 ];
 
+// Official APT rider types — these are the only fare tiers published
+// by the City of Ashland Public Transit division.
 const USER_TYPES = [
-  { key: "General", label: "Standard", icon: "person-outline" },
-  { key: "Senior", label: "Senior", icon: "people-outline" },
-  { key: "Student", label: "Student", icon: "school-outline" },
-  { key: "Veteran", label: "Veteran", icon: "ribbon-outline" },
-  { key: "Elderly/Disabled", label: "Elderly", icon: "accessibility-outline" },
-  { key: "Child", label: "Child", icon: "happy-outline" },
+  { key: "General", label: "General", icon: "person-outline" },
+  { key: "Elderly/Disabled", label: "Elderly / ADA", icon: "accessibility-outline" },
+  { key: "ChildWithAdult", label: "Under 12 + Adult", icon: "happy-outline" },
+  { key: "ChildAlone", label: "Under 12 Alone", icon: "person-circle-outline" },
 ];
 
 const showToast = (msg) => {
@@ -139,9 +139,11 @@ const RiderBookingScreen = ({ navigation, route }) => {
   );
   const [showDatePicker, setShowDatePicker] = useState(scheduledMode);
   const [showTimePicker, setShowTimePicker] = useState(false);
-  const [isSameDay, setIsSameDay] = useState(!scheduledMode);
-  const [isOutOfTown, setIsOutOfTown] = useState(false);
-  const [mileage, setMileage] = useState(5);
+  // `isSameDay` is DERIVED from scheduledDate, not user-toggleable —
+  // APT rules say any trip booked < 24h ahead is same-day. See
+  // `effectiveIsSameDay` below. The legacy state stays only so the
+  // fallback inside `effectiveIsSameDay` has a default.
+  const [isSameDay] = useState(!scheduledMode); // eslint-disable-line no-unused-vars
   const [paymentMethod, setPaymentMethod] = useState("Cash");
   const [loading, setLoading] = useState(false);
   const [user, setUser] = useState(null);
@@ -223,26 +225,90 @@ const RiderBookingScreen = ({ navigation, route }) => {
     );
   };
 
-  const estimateFare = () => {
-    const RATES = {
-      General: 2.0,
-      Standard: 2.0,
-      Senior: 1.0,
-      Student: 1.5,
-      Veteran: 0.0,
-      "Elderly/Disabled": 1.0,
-      Child: 1.0,
-    };
-    let baseFare = RATES[userType] || 2.0;
-    if (isSameDay && ["General", "Standard", "Student"].includes(userType))
-      baseFare += 1.0;
-    let total = baseFare;
-    if (passengerCount > 1 && baseFare > 0) {
-      total += (baseFare / 2) * (passengerCount - 1);
-    }
-    if (isOutOfTown && mileage > 0) total += mileage * 2.5;
-    return total.toFixed(2);
+  // ── OFFICIAL APT FARE MATH ───────────────────────────────────────
+  // Source: City of Ashland, OH — Public Transit Division.
+  // These constants are identical to the server-side rate table so
+  // the preview shown here matches the exact amount the ride is
+  // saved at. NEVER invent rates the APT rate card doesn't publish.
+  const APT_RATES = {
+    Scheduled: {
+      General: 3.0,
+      "Elderly/Disabled": 1.5,
+      ChildWithAdult: 0.0,
+      ChildAlone: 1.5,
+    },
+    SameDay: {
+      General: 5.0,
+      "Elderly/Disabled": 2.5,
+      ChildWithAdult: 0.0,
+      ChildAlone: 2.5,
+    },
   };
+
+  const round2 = (n) =>
+    Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+  const canonicalType = (t) => {
+    if (t === "General" || t === "Standard") return "General";
+    if (t === "Elderly/Disabled" || t === "Senior" || t === "Disabled")
+      return "Elderly/Disabled";
+    if (t === "ChildWithAdult") return "ChildWithAdult";
+    if (t === "ChildAlone") return "ChildAlone";
+    return "General";
+  };
+
+  // Derive isSameDay from the final scheduled time — anything less
+  // than 24h out is Same-Day per APT rules. We keep the UI toggle
+  // for visibility but the server still re-computes this on save.
+  const effectiveIsSameDay = (() => {
+    try {
+      const target = scheduledMode
+        ? scheduledDate
+        : new Date(Date.now() + 15 * 60 * 1000);
+      const diff = target.getTime() - Date.now();
+      return diff < 24 * 60 * 60 * 1000;
+    } catch {
+      return true;
+    }
+  })();
+
+  const estimateFareBreakdown = () => {
+    const primary = canonicalType(userType);
+    const tier = effectiveIsSameDay ? "SameDay" : "Scheduled";
+    const table = APT_RATES[tier];
+
+    const lines = [];
+    const primaryAmount = table[primary] ?? table.General;
+    lines.push({ label: "Primary rider", amount: primaryAmount, type: primary });
+
+    const pax = Math.max(1, Math.floor(Number(passengerCount) || 1));
+    if (pax >= 2) {
+      let second;
+      if (primary === "General") {
+        // APT rule: 2nd rider with General primary pays half.
+        second = round2(table.General / 2);
+        lines.push({ label: "2nd rider · companion (½)", amount: second });
+      } else {
+        // Non-General primary: no discount rule; 2nd rider pays their
+        // own applicable fare. We default them to General.
+        second = table.General;
+        lines.push({ label: "2nd rider · General", amount: second });
+      }
+      // 3rd+ rider: full General fare each (APT doesn't publish a
+      // discount past the 2nd rider).
+      for (let i = 3; i <= pax; i += 1) {
+        lines.push({
+          label: `Rider #${i} · General`,
+          amount: table.General,
+        });
+      }
+    }
+
+    const total = round2(lines.reduce((s, ln) => s + Number(ln.amount || 0), 0));
+    return { lines, total, tier: effectiveIsSameDay ? "Same-Day" : "Scheduled" };
+  };
+
+  const estimateFare = () => estimateFareBreakdown().total.toFixed(2);
 
   const goBack = () => {
     if (step === 0) {
@@ -299,10 +365,9 @@ const RiderBookingScreen = ({ navigation, route }) => {
             }
           : undefined,
         userType,
-        isSameDay,
+        isSameDay: effectiveIsSameDay,
+        childWithAdult: userType === "ChildWithAdult",
         passengers: passengerCount,
-        isOutOfTown,
-        mileage,
         scheduledTime: finalScheduledTime.toISOString(),
         riderId: user?._id || user?.id,
         paymentMethod,
@@ -755,60 +820,23 @@ const RiderBookingScreen = ({ navigation, route }) => {
               />
             )}
 
-            {/* Toggles */}
-            <View style={styles.toggleRow}>
-              <View style={styles.toggleCard}>
-                <Text style={styles.toggleLabel}>Same Day</Text>
-                <TouchableOpacity
-                  style={[styles.toggle, isSameDay && styles.toggleOn]}
-                  onPress={() => setIsSameDay(!isSameDay)}
-                >
-                  <View
-                    style={[
-                      styles.toggleThumb,
-                      isSameDay && styles.toggleThumbOn,
-                    ]}
-                  />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.toggleCard}>
-                <Text style={styles.toggleLabel}>Out of Town</Text>
-                <TouchableOpacity
-                  style={[styles.toggle, isOutOfTown && styles.toggleOn]}
-                  onPress={() => setIsOutOfTown(!isOutOfTown)}
-                >
-                  <View
-                    style={[
-                      styles.toggleThumb,
-                      isOutOfTown && styles.toggleThumbOn,
-                    ]}
-                  />
-                </TouchableOpacity>
+            {/* Service tier (auto-derived from scheduled time) */}
+            <View style={styles.tierBanner}>
+              <View style={[
+                styles.tierDot,
+                { backgroundColor: effectiveIsSameDay ? '#f59e0b' : '#10b981' }
+              ]} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.tierTitle}>
+                  {effectiveIsSameDay ? 'Same-Day Service' : 'Scheduled (24h Advance)'}
+                </Text>
+                <Text style={styles.tierSub}>
+                  {effectiveIsSameDay
+                    ? 'Booked within 24 hours — same-day rates apply.'
+                    : 'Booked 24+ hours ahead — scheduled rates apply.'}
+                </Text>
               </View>
             </View>
-
-            {isOutOfTown && (
-              <>
-                <Text style={styles.fieldTitle}>Estimated Miles</Text>
-                <View style={styles.counterRow}>
-                  <TouchableOpacity
-                    style={styles.counterBtn}
-                    onPress={() => setMileage(Math.max(1, mileage - 1))}
-                  >
-                    <Text style={styles.counterBtnText}>−</Text>
-                  </TouchableOpacity>
-                  <View style={styles.counterDisplay}>
-                    <Text style={styles.counterVal}>{mileage} mi</Text>
-                  </View>
-                  <TouchableOpacity
-                    style={styles.counterBtn}
-                    onPress={() => setMileage(mileage + 1)}
-                  >
-                    <Text style={styles.counterBtnText}>+</Text>
-                  </TouchableOpacity>
-                </View>
-              </>
-            )}
 
             {/* Payment */}
             <Text style={styles.fieldTitle}>Payment</Text>
@@ -864,10 +892,31 @@ const RiderBookingScreen = ({ navigation, route }) => {
               style={styles.fareCard}
             >
               <View style={styles.fareGlow} />
-              <Text style={styles.fareCaption}>ESTIMATED FARE</Text>
+              <Text style={styles.fareCaption}>
+                {effectiveIsSameDay ? "SAME-DAY · TOTAL FARE" : "SCHEDULED · TOTAL FARE"}
+              </Text>
               <Text style={styles.fareAmount}>${estimateFare()}</Text>
+
+              {(() => {
+                const bd = estimateFareBreakdown();
+                return (
+                  <View style={styles.fareLines}>
+                    {bd.lines.map((ln, idx) => (
+                      <View key={idx} style={styles.fareLineRow}>
+                        <Text style={styles.fareLineLbl} numberOfLines={1}>
+                          {ln.label}
+                        </Text>
+                        <Text style={styles.fareLineAmt}>
+                          {ln.amount === 0 ? "FREE" : `$${ln.amount.toFixed(2)}`}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })()}
+
               <Text style={styles.fareMeta}>
-                {passengerCount} pax · {userType}
+                Official APT rate · {passengerCount} pax
               </Text>
             </LinearGradient>
 
@@ -1343,7 +1392,58 @@ const styles = StyleSheet.create({
     marginTop: 2,
     letterSpacing: -1,
   },
-  fareMeta: { fontSize: 11, fontWeight: "700", color: "#94a3b8", marginTop: 4 },
+  fareMeta: { fontSize: 11, fontWeight: "700", color: "#94a3b8", marginTop: 10 },
+
+  /* Fare breakdown lines inside the total card */
+  fareLines: {
+    marginTop: 14,
+    width: "100%",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  fareLineRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 4,
+  },
+  fareLineLbl: {
+    flex: 1,
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 11,
+    fontWeight: "700",
+    marginRight: 10,
+  },
+  fareLineAmt: {
+    color: "white",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+
+  /* Service tier banner (auto-derived from scheduledTime) */
+  tierBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 12,
+    gap: 12,
+    marginTop: 12,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  tierDot: {
+    width: 10, height: 10, borderRadius: 5,
+  },
+  tierTitle: {
+    fontSize: 13, fontWeight: "900", color: "#0f172a",
+  },
+  tierSub: {
+    fontSize: 11, fontWeight: "600", color: "#64748b", marginTop: 2,
+  },
 
   /* Summary */
   summaryCard: {

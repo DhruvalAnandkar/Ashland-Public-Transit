@@ -205,6 +205,8 @@ const RiderTrackingScreen = ({ navigation, route }) => {
   });
   const [driverLiveCoord, setDriverLiveCoord] = useState(null);
   const [driverLastUpdateAt, setDriverLastUpdateAt] = useState(null);
+  const [driverInfo, setDriverInfo] = useState(null);
+  const [driverMessages, setDriverMessages] = useState([]);
   const pollInterval = useRef(null);
   const socketRef = useRef(null);
 
@@ -248,7 +250,46 @@ const RiderTrackingScreen = ({ navigation, route }) => {
         }
       }
     });
+    // Dispatcher assigned / reassigned a driver to this ride.
+    socket.on("driver_assigned", (payload) => {
+      if (!payload) return;
+      if (payload._id && payload._id !== ride._id) return;
+      if (payload.driverInfo) setDriverInfo(payload.driverInfo);
+      if (payload.assignedVehicle) {
+        setRide((prev) => prev ? { ...prev, assignedVehicle: payload.assignedVehicle } : prev);
+      }
+      showToast(
+        payload.driverInfo?.fullName
+          ? `${payload.driverInfo.fullName} is your driver`
+          : "A driver has been assigned",
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    });
+    // Driver pinged "I'm arriving".
+    socket.on("driver_arriving", (payload) => {
+      showToast(
+        `Your driver is arriving${payload?.etaMinutes ? ` (~${payload.etaMinutes} min)` : ""}`,
+      );
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+    });
+    // Free-text message from driver.
+    socket.on("driver_message", (payload) => {
+      if (!payload?.message) return;
+      setDriverMessages((prev) => [
+        ...prev.slice(-19),
+        {
+          id: `${Date.now()}-${Math.random()}`,
+          from: payload.from || "Driver",
+          message: payload.message,
+          timestamp: payload.timestamp || Date.now(),
+        },
+      ]);
+      showToast(`Driver: ${payload.message}`);
+    });
     return () => {
+      socket.off("driver_assigned");
+      socket.off("driver_arriving");
+      socket.off("driver_message");
       socket.disconnect();
       socketRef.current = null;
     };
@@ -496,6 +537,47 @@ const RiderTrackingScreen = ({ navigation, route }) => {
                 </Text>
               </View>
             </View>
+
+            {/* Driver card (appears once dispatch assigns a vehicle/driver) */}
+            {(driverInfo || ride.assignedVehicle) && (
+              <View style={styles.driverCard}>
+                <View style={styles.driverAvatar}>
+                  <Ionicons name="person" size={22} color="#2563eb" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.driverName}>
+                    {driverInfo?.fullName || "Your driver"}
+                  </Text>
+                  <Text style={styles.driverMeta}>
+                    {driverInfo?.vehicleName || ride.assignedVehicle || "Vehicle pending"}
+                    {driverInfo?.vehiclePlate ? ` · ${driverInfo.vehiclePlate}` : ""}
+                  </Text>
+                </View>
+                {driverInfo?.phoneNumber ? (
+                  <TouchableOpacity
+                    style={styles.driverCallBtn}
+                    onPress={() =>
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+                    }
+                  >
+                    <Ionicons name="call" size={16} color="#fff" />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            )}
+
+            {/* Driver chat messages */}
+            {driverMessages.length > 0 && (
+              <View style={styles.driverMsgWrap}>
+                <Text style={styles.driverMsgHeader}>DRIVER UPDATES</Text>
+                {driverMessages.slice(-3).map((m) => (
+                  <View key={m.id} style={styles.driverMsgItem}>
+                    <Ionicons name="chatbubble-ellipses" size={12} color="#2563eb" />
+                    <Text style={styles.driverMsgText}>{m.message}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
 
             {/* Route */}
             <View style={styles.routeSection}>
@@ -993,6 +1075,58 @@ const styles = StyleSheet.create({
     borderRadius: 14,
   },
   fareText: { fontSize: 22, fontWeight: "900", color: "white" },
+
+  driverCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    backgroundColor: "#eff6ff",
+    borderWidth: 1,
+    borderColor: "#bfdbfe",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  driverAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#dbeafe",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driverName: { fontSize: 14, fontWeight: "800", color: "#1e293b" },
+  driverMeta: { fontSize: 11, fontWeight: "700", color: "#64748b", marginTop: 2 },
+  driverCallBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: "#10b981",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  driverMsgWrap: {
+    backgroundColor: "#f8fafc",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+  },
+  driverMsgHeader: {
+    fontSize: 9,
+    fontWeight: "900",
+    letterSpacing: 1.5,
+    color: "#64748b",
+    marginBottom: 6,
+  },
+  driverMsgItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    paddingVertical: 2,
+  },
+  driverMsgText: { flex: 1, fontSize: 12, fontWeight: "600", color: "#334155" },
 
   routeSection: { marginBottom: 20 },
   routeRow: { flexDirection: "row" },

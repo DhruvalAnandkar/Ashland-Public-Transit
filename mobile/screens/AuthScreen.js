@@ -11,11 +11,14 @@ import Animated, {
     useSharedValue, useAnimatedStyle, withSpring, withSequence,
 } from 'react-native-reanimated';
 import { login, signup } from '../services/api';
+import ForgotPasswordScreen from './ForgotPasswordScreen';
+import HeroCanvas from '../components/HeroCanvas';
 
 const { width } = Dimensions.get('window');
 const AnimatedTouchable = Animated.createAnimatedComponent(TouchableOpacity);
 
 const AuthScreen = ({ onLogin }) => {
+    const [showForgot, setShowForgot] = useState(false);
     const [isLogin, setIsLogin] = useState(true);
     const [loading, setLoading] = useState(false);
     const [username, setUsername] = useState('');
@@ -57,6 +60,18 @@ const AuthScreen = ({ onLogin }) => {
         }
     };
 
+    if (showForgot) {
+        return (
+            <ForgotPasswordScreen
+                onClose={() => setShowForgot(false)}
+                onResetComplete={(data) => {
+                    setShowForgot(false);
+                    if (data && onLogin) onLogin(data);
+                }}
+            />
+        );
+    }
+
     return (
         <View style={styles.outerContainer}>
             <StatusBar barStyle="light-content" backgroundColor="#0f172a" />
@@ -69,6 +84,11 @@ const AuthScreen = ({ onLogin }) => {
             {/* Decorative Elements */}
             <View style={[styles.decorCircle, { top: -60, right: -60, width: 200, height: 200, backgroundColor: 'rgba(37,99,235,0.08)' }]} />
             <View style={[styles.decorCircle, { bottom: 80, left: -40, width: 150, height: 150, backgroundColor: 'rgba(5,150,105,0.06)' }]} />
+
+            {/* Animated hero canvas */}
+            <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 260, opacity: 0.55 }}>
+                <HeroCanvas height={260} />
+            </View>
 
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -172,6 +192,16 @@ const AuthScreen = ({ onLogin }) => {
                             </LinearGradient>
                         </AnimatedTouchable>
 
+                        {/* Forgot password */}
+                        {isLogin && (
+                            <TouchableOpacity
+                                style={styles.forgotButton}
+                                onPress={() => setShowForgot(true)}
+                            >
+                                <Text style={styles.forgotText}>Forgot password?</Text>
+                            </TouchableOpacity>
+                        )}
+
                         {/* Biometric */}
                         {isLogin && (
                             <TouchableOpacity
@@ -258,10 +288,13 @@ const styles = StyleSheet.create({
     submitBtnText: { color: 'white', fontWeight: '900', fontSize: 16, textTransform: 'uppercase', letterSpacing: 1 },
 
     biometricButton: {
-        marginTop: 16, alignItems: 'center', padding: 12,
+        marginTop: 12, alignItems: 'center', padding: 12,
         backgroundColor: 'rgba(255,255,255,0.04)', borderRadius: 14,
     },
     biometricText: { color: '#94a3b8', fontSize: 14, fontWeight: '700' },
+
+    forgotButton: { alignItems: 'center', marginTop: 16, paddingVertical: 6 },
+    forgotText: { color: '#60a5fa', fontWeight: '700', fontSize: 13 },
 
     toggleButton: { marginTop: 24, alignItems: 'center', padding: 12 },
     toggleText: { color: '#64748b', fontWeight: '600', fontSize: 14 },
