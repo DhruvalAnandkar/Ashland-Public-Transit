@@ -1,7 +1,8 @@
 import axios from 'axios';
+import config from '../config';
 
-const API_URL = 'http://localhost:5000/api/rides';
-const AUTH_URL = 'http://localhost:5000/api/auth';
+const API_URL = `${config.API_URL}/api/rides`;
+const AUTH_URL = `${config.API_URL}/api/auth`;
 
 // JWT INTERCEPTOR: Automatically attaches token to every request
 axios.interceptors.request.use((config) => {
@@ -190,4 +191,142 @@ export const getAuditLogs = async () => {
 export const getOperationsSnapshot = async () => {
     const response = await axios.get(`${API_URL}/dispatcher/operations-snapshot`);
     return response.data;
+};
+
+// ─── DISPATCHER 4.0 — Rider/Driver 360, broadcasts, notes ───────
+export const getDispatcherKpi = async () => {
+    const { data } = await axios.get(`${API_URL}/dispatcher/kpi`);
+    return data;
+};
+
+export const getRider360 = async (id) => {
+    const { data } = await axios.get(`${API_URL}/dispatcher/rider/${id}`);
+    return data;
+};
+
+export const getDriver360 = async (id) => {
+    const { data } = await axios.get(`${API_URL}/dispatcher/driver/${id}`);
+    return data;
+};
+
+export const addDispatcherNote = async (rideId, note) => {
+    const { data } = await axios.post(`${API_URL}/${rideId}/dispatcher-notes`, { note });
+    return data;
+};
+
+export const markNoShow = async (rideId) => {
+    const { data } = await axios.post(`${API_URL}/${rideId}/no-show`);
+    return data;
+};
+
+export const getDispatcherAudit = async (params = {}) => {
+    const { data } = await axios.get(`${API_URL}/dispatcher/audit`, { params });
+    return data;
+};
+
+// ─── Vehicle CRUD ─────────────────────────────────────────────
+export const createVehicle = async (payload) => {
+    const { data } = await axios.post(`${API_URL}/vehicles`, payload);
+    return data;
+};
+
+export const deleteVehicle = async (id) => {
+    const { data } = await axios.delete(`${API_URL}/vehicles/${id}`);
+    return data;
+};
+
+export const addVehicleServiceLog = async (id, entry) => {
+    const { data } = await axios.post(`${API_URL}/vehicles/${id}/service-log`, entry);
+    return data;
+};
+
+// ─── User moderation (rider/driver suspend, tags) ───────────────
+export const updateUserControl = async (userId, payload) => {
+    const { data } = await axios.patch(
+        `${API_URL}/dispatcher/users/${userId}/control`,
+        payload,
+    );
+    return data;
+};
+
+export const updateDriverProfile = async (driverId, payload) => {
+    const { data } = await axios.patch(
+        `${API_URL}/fleet/drivers/${driverId}`,
+        payload,
+    );
+    return data;
+};
+
+// ─── Broadcast + direct messages ────────────────────────────────
+export const sendBroadcast = async ({ audience, message, severity }) => {
+    const { data } = await axios.post(`${API_URL}/dispatcher/broadcast`, {
+        audience,
+        message,
+        severity,
+    });
+    return data;
+};
+
+export const messageDriver = async (driverUsername, message) => {
+    const { data } = await axios.post(`${API_URL}/dispatcher/message-driver`, {
+        driverUsername,
+        message,
+    });
+    return data;
+};
+
+// ─── Driver-scoped endpoints ─────────────────────────────────────
+export const getDriverManifest = async () => {
+    const { data } = await axios.get(`${API_URL}/driver/my-manifest`);
+    return data;
+};
+
+export const getDriverActiveRide = async () => {
+    const { data } = await axios.get(`${API_URL}/driver/active`);
+    return data;
+};
+
+export const postDriverShift = async (action) => {
+    const { data } = await axios.post(`${API_URL}/driver/shift`, { action });
+    return data;
+};
+
+export const notifyDriverArriving = async (rideId, etaMinutes) => {
+    const { data } = await axios.post(`${API_URL}/driver/arriving`, {
+        rideId,
+        etaMinutes,
+    });
+    return data;
+};
+
+export const driverMessageRider = async (payload) => {
+    const { data } = await axios.post(`${API_URL}/driver/message-rider`, payload);
+    return data;
+};
+
+export const driverWalkie = async (message, severity = "info") => {
+    const { data } = await axios.post(`${API_URL}/driver/walkie`, {
+        message,
+        severity,
+    });
+    return data;
+};
+
+// ─── Auth / password helpers ─────────────────────────────────────
+export const changePassword = async (currentPassword, newPassword) => {
+    const { data } = await axios.post(`${AUTH_URL}/change-password`, {
+        currentPassword,
+        newPassword,
+    });
+    return data;
+};
+
+export const updateMyProfile = async (payload) => {
+    const { data } = await axios.patch(`${AUTH_URL}/me`, payload);
+    return data;
+};
+
+export const getMe = async () => {
+    const { data } = await axios.get(`${AUTH_URL}/me`);
+    return data;
 };

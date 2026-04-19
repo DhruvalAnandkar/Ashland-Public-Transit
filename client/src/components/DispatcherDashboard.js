@@ -1,5 +1,11 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import LiveFleetMap from "./LiveFleetMap";
+import config from "../config";
+import Rider360Modal from "./Rider360Modal";
+import Driver360Modal from "./Driver360Modal";
+import BroadcastCenter from "./BroadcastCenter";
+import AlertBanner from "./AlertBanner";
+import WalkiePanel from "./WalkiePanel";
 import {
   getRides,
   updateRideStatus,
@@ -13,6 +19,11 @@ import {
   updateVehicleDriver,
   getDrivers,
   getOperationsSnapshot,
+  getDispatcherKpi,
+  addDispatcherNote,
+  markNoShow,
+  messageDriver,
+  updateDriverProfile,
 } from "../services/api";
 import {
   Clock,
@@ -39,6 +50,7 @@ import {
   ShieldCheck,
   Download,
   Map,
+  Radio,
 } from "lucide-react";
 import {
   BarChart,
@@ -111,61 +123,77 @@ const DispatcherDashboard = () => {
   const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
 
   // ── DRIVER CHAT MODAL ──────────────────────────────────────────
-  const [chatModal, setChatModal] = useState(null); // { driverName, driverId }
-  const [chatMessages, setChatMessages] = useState([]);
+  //
+  // Uses the SAME socket as the main dispatcher room (joined in the
+  // main `useEffect` below). Messages are sent via REST (which emits
+  // on the server) so they survive reconnects and are auditable.
+  // Inbound messages come from the `driver_message` socket event
+  // which is forwarded to `room_dispatcher`.
+  const [chatModal, setChatModal] = useState(null);
+  const [chatHistory, setChatHistory] = useState({}); // { [driverUsername]: [msg, ...] }
   const [chatInput, setChatInput] = useState("");
-  const chatSocketRef = useRef(null);
   const chatBottomRef = useRef(null);
 
-  const openChat = (driverName, driverId) => {
-    setChatModal({ driverName, driverId });
-    setChatMessages([]);
-    const room = `room_driver_${driverId}`;
-    const socket = io("http://localhost:5000");
-    chatSocketRef.current = socket;
-    socket.emit("join_room", room);
-    socket.on("chat_message", (msg) => {
-      setChatMessages((prev) => [...prev, msg]);
+  const openChat = (driverName, driverId, driverUsername) => {
+    setChatModal({
+      driverName: driverName || driverUsername,
+      driverId,
+      driverUsername: driverUsername || driverName,
     });
+    setTimeout(
+      () => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+      100,
+    );
   };
 
   const closeChat = () => {
-    chatSocketRef.current?.disconnect();
-    chatSocketRef.current = null;
     setChatModal(null);
-    setChatMessages([]);
     setChatInput("");
   };
 
-  const sendChatMessage = () => {
+  const sendChatMessage = async () => {
     const text = chatInput.trim();
     if (!text || !chatModal) return;
-    const room = `room_driver_${chatModal.driverId}`;
-    const msg = { from: "Dispatcher", text, ts: new Date().toLocaleTimeString() };
-    chatSocketRef.current?.emit("chat_message", { room, ...msg });
-    setChatMessages((prev) => [...prev, msg]);
+    const msg = {
+      from: "Dispatcher",
+      message: text,
+      timestamp: Date.now(),
+    };
+    setChatHistory((prev) => ({
+      ...prev,
+      [chatModal.driverUsername]: [
+        ...(prev[chatModal.driverUsername] || []),
+        msg,
+      ],
+    }));
     setChatInput("");
-    setTimeout(() => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    try {
+      await messageDriver(chatModal.driverUsername, text);
+    } catch {
+      addToast("Failed to send message", "error");
+    }
+    setTimeout(
+      () => chatBottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+      80,
+    );
   };
 
   // ── EDIT DRIVER MODAL ─────────────────────────────────────────
-  const [editDriverModal, setEditDriverModal] = useState(null); // driver object
+  const [editDriverModal, setEditDriverModal] = useState(null);
   const [editDriverLoading, setEditDriverLoading] = useState(false);
 
+  // Exposed for the Assignments tab; kept stable name so existing
+  // JSX references still work.
   const openEditDriver = (driver) => setEditDriverModal({ ...driver });
 
   const saveEditDriver = async () => {
     setEditDriverLoading(true);
     try {
-      await fetch(`http://localhost:5000/api/rides/fleet/drivers/${editDriverModal._id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${localStorage.getItem("token")}` },
-        body: JSON.stringify({
-          fullName: editDriverModal.fullName,
-          phoneNumber: editDriverModal.phoneNumber,
-          licenseNumber: editDriverModal.licenseNumber,
-          tags: editDriverModal.tags,
-        }),
+      await updateDriverProfile(editDriverModal._id, {
+        fullName: editDriverModal.fullName,
+        phoneNumber: editDriverModal.phoneNumber,
+        licenseNumber: editDriverModal.licenseNumber,
+        tags: editDriverModal.tags,
       });
       addToast("Driver updated", "success");
       setEditDriverModal(null);
@@ -176,6 +204,19 @@ const DispatcherDashboard = () => {
       setEditDriverLoading(false);
     }
   };
+
+  // ── 360° MODALS ─────────────────────────────────────────────────
+  const [rider360Id, setRider360Id] = useState(null);
+  const [driver360Id, setDriver360Id] = useState(null);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [walkieOpen, setWalkieOpen] = useState(false);
+  const [walkieMessages, setWalkieMessages] = useState([]);
+  const [walkieUnread, setWalkieUnread] = useState(0);
+  const [walkieTarget, setWalkieTarget] = useState(""); // driverUsername to DM, or "" for broadcast
+
+  // ── LIVE ALERT BANNER STATE ────────────────────────────────────
+  const [liveAlerts, setLiveAlerts] = useState([]);
+  const [kpi, setKpi] = useState(null);
 
   // REAL-TIME VISUAL EFFECTS
   // isFirstLoad: controls entrance animation direction.
@@ -291,29 +332,74 @@ const DispatcherDashboard = () => {
     return () => clearInterval(interval);
   }, []);
 
-  // REAL-TIME: Socket connection for instant manifest updates
-  // Connects once on mount, joins the dispatcher room, and listens for
-  // ride_updated events emitted by the server after POST /rides and PATCH /:id/status
+  // REAL-TIME: Unified socket connection for dispatcher.
+  // One socket handles ride updates, driver messages, broadcasts,
+  // and system alerts (SOS, overbooking, etc.).
+  const dispatchSocketRef = useRef(null);
+
   useEffect(() => {
-    const socket = io("http://localhost:5000");
+    const socket = io(config.SOCKET_URL);
+    dispatchSocketRef.current = socket;
 
     socket.on("connect", () => {
       socket.emit("join_dispatcher_room");
       console.log("Dispatcher socket connected:", socket.id);
     });
 
-    // Server emits 'ride_updated' with the full ride document after any creation
-    // or status change. We capture the ride._id to trigger the gold glow pulse
-    // on that specific card, then re-fetch the full manifest to sync all stats.
     socket.on("ride_updated", (updatedRide) => {
       if (updatedRide?._id) {
-        // Mark this card for a 2-second gold border glow, then clear
         setRecentlyUpdatedId(updatedRide._id);
         setTimeout(() => setRecentlyUpdatedId(null), 2000);
       }
-      // Mark first-load as done so subsequent new cards slide in from the right
       isFirstLoad.current = false;
       fetchData();
+    });
+
+    // Driver-to-dispatcher chat
+    socket.on("driver_message", (payload) => {
+      const { driverUsername, message, timestamp } = payload || {};
+      if (!driverUsername || !message) return;
+      setChatHistory((prev) => ({
+        ...prev,
+        [driverUsername]: [
+          ...(prev[driverUsername] || []),
+          { from: driverUsername, message, timestamp },
+        ],
+      }));
+      addToast(`Message from ${driverUsername}: ${message}`, "info");
+    });
+
+    // System alerts (SOS, overbookings, user actions, broadcasts)
+    socket.on("system_alert", (alert) => {
+      if (!alert?.message) return;
+      setLiveAlerts((prev) => [
+        { id: Date.now() + Math.random(), ...alert },
+        ...prev.slice(0, 19),
+      ]);
+      if (alert.severity === "critical") {
+        addToast(`ALERT: ${alert.message}`, "error");
+      }
+    });
+
+    socket.on("broadcast_sent", (payload) => {
+      addToast(`Broadcast sent: ${payload.message}`, "success");
+    });
+
+    // Walkie-talkie: inbound from drivers
+    socket.on("walkie_driver", (data) => {
+      const msg = {
+        id: `${Date.now()}-${Math.random()}`,
+        direction: "in",
+        from: data.from || "Driver",
+        message: data.message,
+        severity: data.severity || "info",
+        timestamp: data.timestamp || Date.now(),
+      };
+      setWalkieMessages((prev) => [...prev.slice(-49), msg]);
+      setWalkieUnread((u) => u + 1);
+      if (data.severity === "urgent") {
+        addToast(`URGENT ${msg.from}: ${msg.message}`, "error");
+      }
     });
 
     socket.on("disconnect", () => {
@@ -324,6 +410,16 @@ const DispatcherDashboard = () => {
       socket.disconnect();
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // KPI poll every 30s
+  useEffect(() => {
+    const tick = async () => {
+      try { setKpi(await getDispatcherKpi()); } catch { /* ignore */ }
+    };
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   // NEW: Handle Manual Booking
   const handleManualBooking = async (e) => {
@@ -345,9 +441,6 @@ const DispatcherDashboard = () => {
     };
 
     try {
-      await createRide(rideData);
-      setIsBookingModalOpen(false);
-      fetchData();
       await createRide(rideData);
       setIsBookingModalOpen(false);
       fetchData();
@@ -479,13 +572,65 @@ const DispatcherDashboard = () => {
 
   return (
     <div className="max-w-[1400px] w-full mx-auto space-y-6 pb-20 font-sans px-4">
+      {/* LIVE ALERT BANNER (SOS, broadcasts, user actions) */}
+      <AlertBanner
+        alerts={liveAlerts}
+        onDismiss={(id) =>
+          setLiveAlerts((prev) => prev.filter((a) => a.id !== id))
+        }
+        onOpenDriver={(username) => {
+          const drv = driversList.find((d) => d.username === username);
+          if (drv?._id) setDriver360Id(drv._id);
+        }}
+      />
+
+      {/* KPI Today Bar */}
+      {kpi && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 bg-white/90 backdrop-blur rounded-2xl p-3 border border-slate-100 shadow-sm">
+          {[
+            { label: "Today Rides", val: kpi.totalRides },
+            { label: "Completed", val: kpi.completedRides, color: "text-emerald-600" },
+            { label: "Pending", val: kpi.pendingRides, color: "text-amber-600" },
+            { label: "No-Shows", val: kpi.noShowRides, color: "text-red-600" },
+            { label: "Revenue", val: `$${kpi.revenue?.toFixed(0) ?? 0}`, color: "text-blue-600" },
+            { label: "Active Drivers", val: kpi.activeDrivers, color: "text-indigo-600" },
+            {
+              label: "On-Time %",
+              val: kpi.onTimePercent == null ? "—" : `${kpi.onTimePercent}%`,
+              color:
+                kpi.onTimePercent == null
+                  ? "text-slate-400"
+                  : kpi.onTimePercent >= 90
+                    ? "text-emerald-600"
+                    : kpi.onTimePercent >= 75
+                      ? "text-amber-600"
+                      : "text-red-600",
+            },
+          ].map((k) => (
+            <div
+              key={k.label}
+              className="bg-slate-50 rounded-xl px-3 py-2 border border-slate-100"
+            >
+              <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">
+                {k.label}
+              </div>
+              <div
+                className={`text-lg font-black ${k.color || "text-slate-800"}`}
+              >
+                {k.val}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* CRITICAL OVERBOOK ALERT - FIXED TOP */}
       {peakUsage > activeVehiclesCount && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-40 bg-red-600/90 backdrop-blur-md text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 animate-bounce">
           <ShieldAlert size={32} className="text-white" />
           <div>
             <h2 className="text-lg font-black uppercase tracking-widest">
-              Critial Overbooking
+              Critical Overbooking
             </h2>
             <p className="font-bold text-xs opacity-90">
               {peakUsage} rides exceed fleet capacity of {activeVehiclesCount}.
@@ -561,7 +706,12 @@ const DispatcherDashboard = () => {
 
         {/* MIDDLE COMPONENT: VIEW TABS */}
         <div className="flex p-1.5 bg-slate-50 border border-slate-100 rounded-2xl shadow-inner overflow-x-auto mx-auto lg:mx-0 relative">
-          {[{ id: "manifest", label: "Manifest" }, { id: "map", label: "Live Map", icon: Map }, { id: "reports", label: "Reports", icon: BarChart3 }].map((tab) => (
+          {[
+            { id: "manifest", label: "Manifest" },
+            { id: "map", label: "Live Map", icon: Map },
+            { id: "assignments", label: "Drivers" },
+            { id: "reports", label: "Reports", icon: BarChart3 },
+          ].map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -621,6 +771,30 @@ const DispatcherDashboard = () => {
 
         {/* ACTION BUTTONS */}
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setBroadcastOpen(true)}
+            className="w-14 h-14 bg-purple-600 text-white rounded-full shadow-[0_8px_20px_rgba(147,51,234,0.3)] hover:bg-purple-500 transition-all font-black flex items-center justify-center hover:scale-105 active:scale-95"
+            title="Broadcast to fleet"
+          >
+            <ShieldCheck size={22} strokeWidth={2.5} />
+          </button>
+
+          <button
+            onClick={() => {
+              setWalkieOpen(true);
+              setWalkieUnread(0);
+            }}
+            className="relative w-14 h-14 bg-red-600 text-white rounded-full shadow-[0_8px_20px_rgba(220,38,38,0.3)] hover:bg-red-500 transition-all font-black flex items-center justify-center hover:scale-105 active:scale-95"
+            title="Walkie-talkie channel"
+          >
+            <Radio size={22} strokeWidth={2.5} />
+            {walkieUnread > 0 && (
+              <span className="absolute -top-1 -right-1 bg-white text-red-600 text-[10px] font-black rounded-full w-5 h-5 flex items-center justify-center shadow">
+                {walkieUnread}
+              </span>
+            )}
+          </button>
+
           <button
             onClick={() => setIsBookingModalOpen(true)}
             className="w-14 h-14 bg-emerald-500 text-white rounded-full shadow-[0_8px_20px_rgba(16,185,129,0.3)] hover:bg-emerald-400 transition-all font-black flex items-center justify-center hover:scale-105 active:scale-95"
@@ -824,9 +998,14 @@ const DispatcherDashboard = () => {
                             <span className="text-[10px] font-black tracking-widest bg-slate-900 text-white px-2.5 py-1 rounded-md shadow-sm">
                               {ride.ticketId || `TKT-${index + 100}`}
                             </span>
-                            <h4 className="font-extrabold text-slate-800 text-lg tracking-tight m-0 leading-none">
+                            <button
+                              onClick={() => ride.riderId && setRider360Id(ride.riderId)}
+                              disabled={!ride.riderId}
+                              className={`font-extrabold text-lg tracking-tight m-0 leading-none transition-colors ${ride.riderId ? 'text-slate-800 hover:text-blue-600 cursor-pointer underline-offset-4 hover:underline' : 'text-slate-800 cursor-default'}`}
+                              title={ride.riderId ? 'View rider profile' : ride.passengerName}
+                            >
                               {ride.passengerName}
-                            </h4>
+                            </button>
                             <span className={`text-[9px] font-black px-2.5 py-1 rounded-md uppercase tracking-wider shadow-sm border ${ride.status === 'Confirmed' ? 'bg-emerald-50 border-emerald-100 text-emerald-700' :
                                 ride.status === 'En-Route' ? 'bg-blue-50 border-blue-100 text-blue-700 animate-pulse' :
                                   ride.status === 'Completed' ? 'bg-teal-50 border-teal-100 text-teal-700' :
@@ -943,7 +1122,7 @@ const DispatcherDashboard = () => {
                               if (!v?.assignedDriver) return null;
                               const driver = driversList.find((d) => d.username === v.assignedDriver);
                               return (
-                                <button onClick={() => openChat(v.assignedDriver, driver?._id || v.assignedDriver)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition-colors border border-slate-100 hover:border-emerald-200" title="Chat with Driver">
+                                <button onClick={() => openChat(v.assignedDriver, driver?._id || v.assignedDriver, v.assignedDriver)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-emerald-50 hover:text-emerald-600 transition-colors border border-slate-100 hover:border-emerald-200" title="Chat with Driver">
                                   <Phone size={16} />
                                 </button>
                               );
@@ -951,18 +1130,94 @@ const DispatcherDashboard = () => {
                             <button onClick={() => setEditingRide(ride)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-amber-50 hover:text-amber-600 transition-colors border border-slate-100 hover:border-amber-200" title="Edit Details">
                               <Pencil size={16} />
                             </button>
-                            <button onClick={() => handleStatusUpdate(ride._id, 'Confirmed', ride.scheduledTime)} className="px-3 py-2 bg-emerald-50 text-emerald-600 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100 flex items-center gap-1.5" title="Confirm Ride">
-                              <CheckCircle size={14} /> Confirm
+
+                            <button
+                              onClick={async () => {
+                                const note = window.prompt(
+                                  `Dispatcher note for ${ride.passengerName}:`,
+                                  ride.dispatcherNotes || "",
+                                );
+                                if (note == null) return;
+                                try {
+                                  await addDispatcherNote(ride._id, note);
+                                  addToast("Note saved", "success");
+                                  fetchData();
+                                } catch (err) {
+                                  addToast(
+                                    `Note save failed: ${err.response?.data?.message || err.message}`,
+                                    "error",
+                                  );
+                                }
+                              }}
+                              className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-purple-50 hover:text-purple-600 transition-colors border border-slate-100 hover:border-purple-200"
+                              title="Dispatcher Note"
+                            >
+                              <FileText size={16} />
                             </button>
-                            {ride.status === 'Confirmed' || ride.status === 'En-Route' ? (
-                              <button onClick={() => handleStatusUpdate(ride._id, 'Cancelled')} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Emergency Cancel">
-                                <Ban size={16} />
-                              </button>
-                            ) : (
-                              <button onClick={() => handleStatusUpdate(ride._id, 'Rejected')} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Reject Request">
-                                <XCircle size={16} />
+
+                            {ride.status === "Pending" && (
+                              <button
+                                onClick={() => handleStatusUpdate(ride._id, "Confirmed", ride.scheduledTime)}
+                                className="px-3 py-2 bg-emerald-50 text-emerald-600 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-emerald-500 hover:text-white transition-all shadow-sm border border-emerald-100 flex items-center gap-1.5"
+                                title="Confirm Ride"
+                              >
+                                <CheckCircle size={14} /> Confirm
                               </button>
                             )}
+                            {ride.status === "Confirmed" && (
+                              <button
+                                onClick={() => handleStatusUpdate(ride._id, "En-Route")}
+                                className="px-3 py-2 bg-blue-50 text-blue-600 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-blue-500 hover:text-white transition-all shadow-sm border border-blue-100 flex items-center gap-1.5"
+                                title="Mark En-Route"
+                              >
+                                <Activity size={14} /> En-Route
+                              </button>
+                            )}
+                            {ride.status === "En-Route" && (
+                              <button
+                                onClick={() => handleStatusUpdate(ride._id, "Completed")}
+                                className="px-3 py-2 bg-teal-50 text-teal-600 font-black text-[10px] uppercase tracking-wider rounded-lg hover:bg-teal-500 hover:text-white transition-all shadow-sm border border-teal-100 flex items-center gap-1.5"
+                                title="Complete Ride"
+                              >
+                                <CheckCircle size={14} /> Complete
+                              </button>
+                            )}
+                            {(ride.status === "Pending" || ride.status === "Confirmed") && (
+                              <button
+                                onClick={() => {
+                                  setConfirmAction({
+                                    message: `Mark ${ride.passengerName}'s ride as NO-SHOW? APT no-show fee will be invoiced automatically.`,
+                                    onConfirm: async () => {
+                                      try {
+                                        await markNoShow(ride._id);
+                                        addToast("No-show recorded", "success");
+                                        fetchData();
+                                      } catch (err) {
+                                        addToast(
+                                          `No-show failed: ${err.response?.data?.message || err.message}`,
+                                          "error",
+                                        );
+                                      }
+                                      setConfirmAction(null);
+                                    },
+                                  });
+                                }}
+                                className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-orange-50 hover:text-orange-600 transition-colors border border-slate-100 hover:border-orange-200"
+                                title="Mark No-Show"
+                              >
+                                <Ticket size={16} />
+                              </button>
+                            )}
+
+                            {ride.status === "Confirmed" || ride.status === "En-Route" ? (
+                              <button onClick={() => handleStatusUpdate(ride._id, "Cancelled")} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Emergency Cancel">
+                                <Ban size={16} />
+                              </button>
+                            ) : ride.status === "Pending" ? (
+                              <button onClick={() => handleStatusUpdate(ride._id, "Rejected")} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors border border-slate-100 hover:border-red-200" title="Reject Request">
+                                <XCircle size={16} />
+                              </button>
+                            ) : null}
                           </div>
                         </div>
                       </div>
@@ -989,7 +1244,7 @@ const DispatcherDashboard = () => {
           const confirmedRides = rides.filter(r => r.status === "Confirmed");
           const cancelledRides = rides.filter(r => r.status === "Cancelled" || r.status === "Rejected");
           const enRouteRides = rides.filter(r => r.status === "En-Route");
-          const pendingRides = rides.filter(r => r.status === "Pending" || r.status === "Pending Review");
+          const pendingRides = rides.filter(r => r.status === "Pending");
 
           const completionRate = totalRides > 0 ? ((completedRides.length / totalRides) * 100).toFixed(1) : 0;
           const cancellationRate = totalRides > 0 ? ((cancelledRides.length / totalRides) * 100).toFixed(1) : 0;
@@ -1276,10 +1531,18 @@ const DispatcherDashboard = () => {
                   {opsSnapshot.riders.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
                       {opsSnapshot.riders.map((rider, i) => (
-                        <div key={rider._id || i} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-black text-[10px]">{(rider.username || rider.fullName || "?").charAt(0).toUpperCase()}</div>
-                          <span className="font-bold text-slate-700 truncate">{rider.username || rider.fullName || `Rider #${i + 1}`}</span>
-                        </div>
+                        <button
+                          key={rider._id || i}
+                          onClick={() => rider._id && setRider360Id(rider._id)}
+                          className="flex items-center gap-2 p-2.5 bg-slate-50 hover:bg-blue-50 rounded-xl border border-slate-100 text-xs transition-colors text-left"
+                        >
+                          <div className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center text-blue-600 font-black text-[10px]">
+                            {(rider.username || rider.fullName || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <span className="font-bold text-slate-700 truncate">
+                            {rider.username || rider.fullName || `Rider #${i + 1}`}
+                          </span>
+                        </button>
                       ))}
                     </div>
                   ) : (
@@ -1297,13 +1560,28 @@ const DispatcherDashboard = () => {
                       {opsSnapshot.drivers.map((driver, i) => {
                         const assignedVehicle = vehicles.find(v => v.assignedDriver === driver.username);
                         return (
-                          <div key={driver._id || i} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                            <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-[10px]">{(driver.username || "?").charAt(0).toUpperCase()}</div>
-                            <div className="flex flex-col min-w-0">
-                              <span className="font-bold text-slate-700 truncate">{driver.username || `Driver #${i + 1}`}</span>
-                              {assignedVehicle && <span className="text-[9px] text-blue-500 font-bold truncate">{assignedVehicle.name}</span>}
+                          <button
+                            key={driver._id || i}
+                            onClick={() => driver._id && setDriver360Id(driver._id)}
+                            className="flex items-center gap-2 p-2.5 bg-slate-50 hover:bg-indigo-50 rounded-xl border border-slate-100 text-xs transition-colors text-left"
+                          >
+                            <div className="w-7 h-7 rounded-lg bg-indigo-100 flex items-center justify-center text-indigo-600 font-black text-[10px]">
+                              {(driver.username || "?").charAt(0).toUpperCase()}
                             </div>
-                          </div>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="font-bold text-slate-700 truncate">
+                                {driver.username || `Driver #${i + 1}`}
+                              </span>
+                              {assignedVehicle && (
+                                <span className="text-[9px] text-blue-500 font-bold truncate">
+                                  {assignedVehicle.name}
+                                </span>
+                              )}
+                            </div>
+                            <span
+                              className={`w-2 h-2 rounded-full ${driver.status === "Active" ? "bg-emerald-500" : "bg-slate-300"}`}
+                            />
+                          </button>
                         );
                       })}
                     </div>
@@ -1748,16 +2026,25 @@ const DispatcherDashboard = () => {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-2 bg-slate-50">
-              {chatMessages.length === 0 && (
+              {(chatHistory[chatModal.driverUsername] || []).length === 0 && (
                 <p className="text-center text-slate-400 text-xs font-bold uppercase tracking-widest pt-8">
                   Send a message to {chatModal.driverName}
                 </p>
               )}
-              {chatMessages.map((m, i) => (
-                <div key={i} className={`flex ${m.from === "Dispatcher" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${m.from === "Dispatcher" ? "bg-blue-900 text-white" : "bg-white text-slate-700 border border-slate-200"}`}>
-                    <p className="font-medium">{m.text}</p>
-                    <p className="text-[10px] opacity-60 mt-0.5">{m.ts}</p>
+              {(chatHistory[chatModal.driverUsername] || []).map((m, i) => (
+                <div
+                  key={i}
+                  className={`flex ${m.from === "Dispatcher" ? "justify-end" : "justify-start"}`}
+                >
+                  <div
+                    className={`max-w-[80%] px-3 py-2 rounded-xl text-sm ${m.from === "Dispatcher" ? "bg-blue-900 text-white" : "bg-white text-slate-700 border border-slate-200"}`}
+                  >
+                    <p className="font-medium">{m.message}</p>
+                    <p className="text-[10px] opacity-60 mt-0.5">
+                      {m.timestamp
+                        ? new Date(m.timestamp).toLocaleTimeString()
+                        : ""}
+                    </p>
                   </div>
                 </div>
               ))}
@@ -1823,6 +2110,64 @@ const DispatcherDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* ── 360° + BROADCAST MODALS ──────────────────────────── */}
+      {rider360Id && (
+        <Rider360Modal
+          riderId={rider360Id}
+          onClose={() => setRider360Id(null)}
+          onToast={addToast}
+        />
+      )}
+      {driver360Id && (
+        <Driver360Modal
+          driverId={driver360Id}
+          onClose={() => setDriver360Id(null)}
+          onToast={addToast}
+          onOpenChat={(d) => openChat(d.fullName || d.username, d._id, d.username)}
+        />
+      )}
+      {broadcastOpen && (
+        <BroadcastCenter
+          onClose={() => setBroadcastOpen(false)}
+          onToast={addToast}
+        />
+      )}
+      <AnimatePresence>
+        {walkieOpen && (
+          <WalkiePanel
+            mode="dispatcher"
+            title={walkieTarget ? `Dispatch → ${walkieTarget}` : "Dispatch ⇆ All drivers"}
+            messages={walkieMessages}
+            onSend={(message, severity) => {
+              const payload = {
+                driverUsername: walkieTarget || undefined,
+                message,
+                severity,
+                from: "Dispatch",
+              };
+              if (dispatchSocketRef.current) {
+                dispatchSocketRef.current.emit(
+                  walkieTarget ? "walkie_to_driver" : "dispatcher_broadcast",
+                  walkieTarget ? payload : { audience: "drivers", message, severity },
+                );
+              }
+              setWalkieMessages((prev) => [
+                ...prev.slice(-49),
+                {
+                  id: `${Date.now()}-out`,
+                  direction: "out",
+                  from: "You",
+                  message,
+                  severity,
+                  timestamp: Date.now(),
+                },
+              ]);
+            }}
+            onClose={() => setWalkieOpen(false)}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 };

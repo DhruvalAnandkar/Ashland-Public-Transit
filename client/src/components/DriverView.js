@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
   getRides,
   updateRideStatus,
@@ -6,6 +6,11 @@ import {
   updateRideVehicle,
   login,
   postDriverLocation,
+  getDriverActiveRide,
+  postDriverShift,
+  notifyDriverArriving,
+  driverMessageRider,
+  driverWalkie,
 } from "../services/api";
 import { io } from "socket.io-client";
 import config from "../config";
@@ -18,10 +23,23 @@ import {
   Hand,
   X,
   AlertTriangle,
+  Phone,
+  MessageSquare,
+  Radio,
+  Play,
+  Pause,
+  Power,
+  Navigation,
+  Settings,
+  LogOut,
+  Bell,
 } from "lucide-react";
 import LoginModal from "./LoginModal";
 import Toast from "./Toast";
 import { AnimatePresence, motion } from "framer-motion";
+import DriverNavMap from "./DriverNavMap";
+import WalkiePanel from "./WalkiePanel";
+import DriverProfileModal from "./DriverProfileModal";
 
 const DriverView = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(
@@ -40,6 +58,20 @@ const DriverView = () => {
   const socketRef = React.useRef(null);
   const gpsIntervalRef = React.useRef(null);
   const gpsWatchIdRef = React.useRef(null);
+
+  // Phase 5 additions ─────────────────────────────────────────────
+  const [shift, setShift] = useState(
+    () => localStorage.getItem("driverShift") || "Idle",
+  );
+  const [driverCoords, setDriverCoords] = useState(null); // {lat,lng}
+  const [activeDetails, setActiveDetails] = useState(null); // { ride, rider, vehicle }
+  const [pickupLatLng, setPickupLatLng] = useState(null);
+  const [dropoffLatLng, setDropoffLatLng] = useState(null);
+  const [etaInfo, setEtaInfo] = useState(null);
+  const [walkieOpen, setWalkieOpen] = useState(false);
+  const [walkieMessages, setWalkieMessages] = useState([]);
+  const [walkieUnread, setWalkieUnread] = useState(0);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   const [viewDate, setViewDate] = useState(
     new Date().toLocaleDateString("en-CA"),
@@ -103,14 +135,6 @@ const DriverView = () => {
         const isDateMatch = rideDate === targetDateStr;
         const isMyVehicle = r.assignedVehicle === selectedVehicle;
 
-        if (isMyVehicle)
-          console.log("DriverView Match:", {
-            id: r.ticketId,
-            rideDate,
-            targetDateStr,
-            status: r.status,
-          });
-
         return (
           isMyVehicle &&
           (r.status === "Confirmed" || r.status === "En-Route") &&
@@ -155,10 +179,58 @@ const DriverView = () => {
       }
     });
 
+    const pushWalkie = (m, direction = "in") => {
+      setWalkieMessages((prev) => [
+        ...prev.slice(-49),
+        { id: `${Date.now()}-${Math.random()}`, direction, ...m },
+      ]);
+      if (direction === "in") {
+        setWalkieUnread((u) => (walkieOpen ? 0 : u + 1));
+      }
+    };
+
+    socket.on("manifest_updated", () => {
+      loadManifest();
+      addToast("Manifest updated from dispatch", "info");
+    });
+    socket.on("dispatcher_message", (data) => {
+      pushWalkie({
+        from: data.from || "Dispatch",
+        message: data.message,
+        severity: data.severity || "info",
+        timestamp: data.timestamp || Date.now(),
+      });
+    });
+    socket.on("walkie_dispatcher", (data) => {
+      pushWalkie({
+        from: data.from || "Dispatch",
+        message: data.message,
+        severity: data.severity || "info",
+        timestamp: data.timestamp || Date.now(),
+      });
+    });
+    socket.on("broadcast_drivers", (data) => {
+      pushWalkie({
+        from: "BROADCAST",
+        message: data.message,
+        severity: data.severity || "info",
+        timestamp: data.timestamp || Date.now(),
+      });
+      addToast(`Dispatch: ${data.message}`, data.severity === "urgent" ? "error" : "info");
+    });
+
     return () => {
+      socket.off("manifest_updated");
+      socket.off("dispatcher_message");
+      socket.off("walkie_dispatcher");
+      socket.off("broadcast_drivers");
       socket.disconnect();
       socketRef.current = null;
     };
+    // loadManifest is reference-stable via useCallback deps, and we
+    // intentionally don't include walkieOpen because the handler reads it
+    // from the latest closure; add/remove listeners only on auth change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
 
   useEffect(() => {
@@ -188,6 +260,7 @@ const DriverView = () => {
 
     const publishPosition = async (position) => {
       const coordinates = [position.coords.longitude, position.coords.latitude];
+      setDriverCoords({ lat: position.coords.latitude, lng: position.coords.longitude });
       const currentRide =
         myRides.find((r) => r.status === "En-Route") ||
         myRides.find((r) => r.status === "Confirmed") ||
@@ -271,6 +344,122 @@ const DriverView = () => {
       }
     };
   }, [isAuthenticated, selectedVehicle, myRides]);
+
+  // Load full active-ride detail (rider info, vehicle) whenever selection changes
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    (async () => {
+      try {
+        const data = await getDriverActiveRide();
+        setActiveDetails(data);
+      } catch {
+        setActiveDetails(null);
+      }
+    })();
+  }, [isAuthenticated, myRides.length]);
+
+  // Geocode pickup / dropoff once Google Maps SDK is loaded. Uses
+  // ride's embedded lat/lng when present (future-proof).
+  useEffect(() => {
+    const ride = activeDetails?.ride;
+    if (!ride) {
+      setPickupLatLng(null);
+      setDropoffLatLng(null);
+      return;
+    }
+    const maybeGeocode = (addr, setter) => {
+      if (!addr) return setter(null);
+      if (!window.google?.maps?.Geocoder) {
+        setter(null);
+        return;
+      }
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode({ address: addr }, (results, status) => {
+        if (status === "OK" && results?.[0]) {
+          const loc = results[0].geometry.location;
+          setter({ lat: loc.lat(), lng: loc.lng() });
+        } else {
+          setter(null);
+        }
+      });
+    };
+    maybeGeocode(ride.pickup, setPickupLatLng);
+    maybeGeocode(ride.dropoff, setDropoffLatLng);
+  }, [activeDetails?.ride?._id, activeDetails?.ride?.pickup, activeDetails?.ride?.dropoff]);
+
+  // ─── Driver actions ───────────────────────────────────────────
+  const handleShift = async (action) => {
+    try {
+      const { status } = await postDriverShift(action);
+      setShift(status);
+      localStorage.setItem("driverShift", status);
+      addToast(
+        action === "start" ? "You are ON DUTY" : action === "break" ? "On break" : "Off duty",
+        "success",
+      );
+    } catch {
+      addToast("Could not update shift", "error");
+    }
+  };
+
+  const sendWalkie = async (message, severity) => {
+    try {
+      await driverWalkie(message, severity);
+      setWalkieMessages((prev) => [
+        ...prev.slice(-49),
+        {
+          id: `${Date.now()}-out`,
+          direction: "out",
+          from: "You",
+          message,
+          severity,
+          timestamp: Date.now(),
+        },
+      ]);
+    } catch {
+      addToast("Radio transmit failed", "error");
+    }
+  };
+
+  const handleArriving = async (ride) => {
+    try {
+      await notifyDriverArriving(
+        ride._id,
+        etaInfo?.durationText ? Math.round(etaInfo.durationSeconds / 60) : null,
+      );
+      addToast("Rider notified you're arriving", "success");
+    } catch {
+      addToast("Unable to notify rider", "error");
+    }
+  };
+
+  const messageRider = async (ride, message) => {
+    try {
+      await driverMessageRider({
+        riderId: ride.riderId,
+        rideId: ride._id,
+        message,
+      });
+      addToast("Message sent to rider", "success");
+    } catch {
+      addToast("Message failed", "error");
+    }
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("driverUsername");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("driverShift");
+    setIsAuthenticated(false);
+  };
+
+  // Determine nav phase for the live map
+  const activeRide = useMemo(
+    () => myRides.find((r) => r.status === "En-Route") || myRides.find((r) => r.status === "Confirmed") || null,
+    [myRides],
+  );
+  const navPhase = activeRide?.status === "En-Route" ? "to_dropoff" : activeRide ? "to_pickup" : "idle";
 
   const executeUpdateStatus = async () => {
     if (!confirmAction) return;
@@ -407,9 +596,68 @@ const DriverView = () => {
             <motion.button whileTap={{ scale: 0.9 }} onClick={() => changeDate(1)} className="h-full px-3 text-slate-400 hover:text-blue-600 hover:bg-white rounded-lg transition-all flex items-center justify-center">→</motion.button>
           </div>
 
-          {/* RIGHT: Shift Stats */}
-          <div className="flex items-center gap-5 shrink-0">
-            <div className="flex flex-col items-end">
+          {/* RIGHT: Shift controls + stats */}
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {/* Shift pill */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200/60 rounded-xl p-1">
+              <button
+                onClick={() => handleShift("start")}
+                title="Start shift"
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-all ${shift === "Active" ? "bg-emerald-500 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}
+              >
+                <Play size={11} /> On
+              </button>
+              <button
+                onClick={() => handleShift("break")}
+                title="Break"
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-all ${shift === "Break" ? "bg-amber-500 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}
+              >
+                <Pause size={11} /> Break
+              </button>
+              <button
+                onClick={() => handleShift("end")}
+                title="End shift"
+                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest flex items-center gap-1 transition-all ${shift === "Offline" ? "bg-slate-700 text-white shadow-sm" : "text-slate-600 hover:bg-white"}`}
+              >
+                <Power size={11} /> Off
+              </button>
+            </div>
+
+            {/* Walkie */}
+            <button
+              onClick={() => {
+                setWalkieOpen((o) => !o);
+                setWalkieUnread(0);
+              }}
+              className="relative px-3 py-2 rounded-xl bg-gradient-to-br from-red-600 to-red-500 text-white font-black uppercase text-[10px] tracking-widest flex items-center gap-1.5 shadow-md shadow-red-200/50 hover:brightness-110"
+            >
+              <Radio size={12} /> Walkie
+              {walkieUnread > 0 && (
+                <span className="absolute -top-1 -right-1 bg-white text-red-600 text-[9px] font-black rounded-full w-4 h-4 flex items-center justify-center shadow">
+                  {walkieUnread}
+                </span>
+              )}
+            </button>
+
+            {/* Profile */}
+            <button
+              onClick={() => setProfileOpen(true)}
+              title="Profile & password"
+              className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              <Settings size={14} />
+            </button>
+
+            {/* Logout */}
+            <button
+              onClick={handleLogout}
+              title="Log out"
+              className="p-2 rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50"
+            >
+              <LogOut size={14} />
+            </button>
+
+            <div className="flex flex-col items-end pl-2 border-l border-slate-200">
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">My Rides</p>
               <p className="text-xl font-black text-blue-600 leading-none">{myRides.length}</p>
             </div>
@@ -481,6 +729,97 @@ const DriverView = () => {
         </motion.div>
       ) : (
         <div className="space-y-6 relative z-10">
+          {/* SECTION 0: LIVE NAVIGATION */}
+          {activeRide && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white/95 backdrop-blur-xl rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+            >
+              <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-blue-50/70 to-emerald-50/50">
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${navPhase === "to_dropoff" ? "bg-red-100 text-red-600" : "bg-emerald-100 text-emerald-600"}`}>
+                    <Navigation size={18} />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 leading-none">
+                      {navPhase === "to_dropoff" ? "Drop-off navigation" : "Pickup navigation"}
+                    </p>
+                    <p className="text-base font-black text-slate-800 leading-tight">
+                      {activeDetails?.rider?.fullName || activeRide.passengerName || "Rider"}
+                      {activeDetails?.rider?.phoneNumber && (
+                        <span className="text-xs font-bold text-slate-500 ml-2">
+                          {activeDetails.rider.phoneNumber}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {etaInfo && (
+                    <div className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-700 font-black text-xs uppercase tracking-widest flex items-center gap-1.5">
+                      <Clock size={12} /> {etaInfo.durationText} · {etaInfo.distanceText}
+                    </div>
+                  )}
+                  {activeRide.status === "Confirmed" && (
+                    <button
+                      onClick={() => handleArriving(activeRide)}
+                      className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-black text-[10px] uppercase tracking-widest flex items-center gap-1.5 shadow-sm"
+                    >
+                      <Bell size={11} /> Arriving
+                    </button>
+                  )}
+                  {activeDetails?.rider?.phoneNumber && (
+                    <a
+                      href={`tel:${activeDetails.rider.phoneNumber}`}
+                      className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                      title="Call rider"
+                    >
+                      <Phone size={14} />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => {
+                      const msg = prompt("Message to rider:", "I'm on my way.");
+                      if (msg) messageRider(activeRide, msg);
+                    }}
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50"
+                    title="Message rider"
+                  >
+                    <MessageSquare size={14} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-4">
+                <DriverNavMap
+                  driverPos={driverCoords}
+                  pickupLatLng={pickupLatLng}
+                  dropoffLatLng={dropoffLatLng}
+                  pickupLabel={activeRide.pickup}
+                  dropoffLabel={activeRide.dropoff}
+                  phase={navPhase}
+                  onEta={setEtaInfo}
+                  height={320}
+                />
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400" /> Pickup
+                    </p>
+                    <p className="text-xs font-bold text-slate-700 truncate">{activeRide.pickup}</p>
+                  </div>
+                  <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1 flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-red-400" /> Drop-off
+                    </p>
+                    <p className="text-xs font-bold text-slate-700 truncate">{activeRide.dropoff}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+
           {/* SECTION 1: MY ACTIVE MANIFEST */}
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
             <div className="flex items-center justify-between mb-4">
@@ -561,6 +900,29 @@ const DriverView = () => {
           ))}
         </AnimatePresence>
       </div>
+
+      {/* WALKIE PANEL */}
+      <AnimatePresence>
+        {walkieOpen && (
+          <WalkiePanel
+            mode="driver"
+            title={`${selectedVehicle || "Driver"} ⇆ Dispatch`}
+            messages={walkieMessages}
+            onSend={sendWalkie}
+            onClose={() => setWalkieOpen(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* PROFILE MODAL */}
+      <AnimatePresence>
+        {profileOpen && (
+          <DriverProfileModal
+            onClose={() => setProfileOpen(false)}
+            onToast={(m, t) => addToast(m, t)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* CONFIRMATION MODAL */}
       <AnimatePresence>

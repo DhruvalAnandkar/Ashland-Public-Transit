@@ -3,9 +3,7 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
-  Link,
   Navigate,
-  useNavigate,
 } from "react-router-dom";
 import "./App.css";
 import BookingForm from "./components/BookingForm";
@@ -15,6 +13,16 @@ import FleetManager from "./components/FleetManager";
 import LandingPage from "./components/LandingPage";
 import TrackRide from "./components/TrackRide";
 import LoginModal from "./components/LoginModal";
+import SiteNavbar from "./components/SiteNavbar";
+import SiteFooter from "./components/SiteFooter";
+import {
+  AboutPage,
+  ServicesPage,
+  FaresPage,
+  AccessibilityPage,
+  FAQPage,
+  ContactPage,
+} from "./components/MarketingPages";
 
 // --- ROLE-BASED PROTECTION ---
 const RoleProtectedRoute = ({ allowedRoles, userRole, children }) => {
@@ -107,73 +115,19 @@ function App() {
           initialRole={targetLoginRole}
         />
 
-        {/* --- NAVIGATION BAR --- */}
-        <nav className="sticky top-0 z-50 backdrop-blur-md bg-blue-900/95 text-white shadow-lg border-b border-white/10">
-          <div className="max-w-6xl mx-auto flex justify-between items-center p-4">
-            <Link
-              to="/"
-              className="text-xl font-black tracking-tighter flex items-center gap-2"
-            >
-              ASHLAND TRANSIT
-            </Link>
-
-            <div className="flex items-center gap-6">
-              <Link
-                to="/book"
-                className="text-sm font-bold opacity-80 hover:opacity-100 transition-opacity"
-              >
-                Book a Ride
-              </Link>
-
-              {userRole ? (
-                <div className="flex items-center gap-4">
-                  {/* SECURE HEADER: Drivers do NOT see the Portal link */}
-                  {(userRole === "Dispatcher" || userRole === "Admin") && (
-                    <Link
-                      to="/dashboard"
-                      className="bg-white/10 hover:bg-white/20 text-white px-4 py-2 rounded-xl font-bold backdrop-blur-sm transition-all border border-white/10"
-                    >
-                      Portal
-                    </Link>
-                  )}
-
-                  <button
-                    onClick={handleLogout}
-                    className="text-xs text-blue-200 hover:text-white transition-colors uppercase tracking-wider font-bold"
-                  >
-                    Logout
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => {
-                      setTargetLoginRole("Driver");
-                      setIsLoginModalOpen(true);
-                    }}
-                    className="text-sm bg-slate-700 hover:bg-slate-600 px-4 py-2 rounded-xl font-bold shadow-lg shadow-slate-900/20 transition-all flex items-center gap-2"
-                  >
-                    To Driver View
-                  </button>
-                  <button
-                    onClick={() => {
-                      setTargetLoginRole("Dispatcher");
-                      setIsLoginModalOpen(true);
-                    }}
-                    className="text-sm bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-xl font-bold shadow-lg shadow-blue-900/20 transition-all border border-blue-400/30"
-                  >
-                    Dispatcher Login
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </nav>
+        <SiteNavbar
+          userRole={userRole}
+          onStaffLogin={(role = "Dispatcher") => {
+            setTargetLoginRole(role);
+            setIsLoginModalOpen(true);
+          }}
+          onLogout={handleLogout}
+        />
 
         {/* --- MAIN ROUTING LOGIC --- */}
-        <main className="py-12 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+        <main className="pt-16">
           <Routes>
-            {/* PUBLIC */}
+            {/* PUBLIC marketing */}
             <Route
               path="/"
               element={
@@ -185,8 +139,29 @@ function App() {
                 />
               }
             />
-            <Route path="/book" element={<BookingForm />} />
-            <Route path="/track" element={<TrackRide />} />
+            <Route path="/about" element={<AboutPage />} />
+            <Route path="/services" element={<ServicesPage />} />
+            <Route path="/fares" element={<FaresPage />} />
+            <Route path="/accessibility" element={<AccessibilityPage />} />
+            <Route path="/faq" element={<FAQPage />} />
+            <Route path="/contact" element={<ContactPage />} />
+
+            <Route
+              path="/book"
+              element={
+                <div className="py-12 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+                  <BookingForm />
+                </div>
+              }
+            />
+            <Route
+              path="/track"
+              element={
+                <div className="py-12 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+                  <TrackRide />
+                </div>
+              }
+            />
 
             {/* PROTECTED: DISPATCHER ONLY */}
             <Route
@@ -196,7 +171,9 @@ function App() {
                   allowedRoles={["Dispatcher", "Admin"]}
                   userRole={userRole}
                 >
-                  <DispatcherDashboard />
+                  <div className="py-8 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+                    <DispatcherDashboard />
+                  </div>
                 </RoleProtectedRoute>
               }
             />
@@ -208,7 +185,9 @@ function App() {
                   allowedRoles={["Dispatcher", "Admin"]}
                   userRole={userRole}
                 >
-                  <FleetManager />
+                  <div className="py-8 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+                    <FleetManager />
+                  </div>
                 </RoleProtectedRoute>
               }
             />
@@ -221,16 +200,16 @@ function App() {
                   allowedRoles={["Driver"]}
                   userRole={userRole}
                 >
-                  <DriverView />
+                  <div className="py-8 container mx-auto px-4 sm:px-6 lg:px-8 max-w-7xl">
+                    <DriverView />
+                  </div>
                 </RoleProtectedRoute>
               }
             />
           </Routes>
         </main>
 
-        <footer className="text-center py-10 text-slate-400 text-xs font-medium uppercase tracking-widest">
-          © 2026 Ashland City Transit Project • Senior CS Thesis Portfolio
-        </footer>
+        <SiteFooter />
       </div>
     </Router>
   );
